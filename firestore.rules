@@ -1,0 +1,104 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      // Bootstrap with an email or verifiable admin role.
+      return isSignedIn() && (
+        request.auth.token.email == 'bcicomputerpoint@gmail.com' ||
+        request.auth.token.email == 'admin@onusandhan.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin'
+      );
+    }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) && data.keys().size() == 3
+          && data.email is string && data.email.size() <= 128
+          && data.role in ['Scholar', 'Admin']
+          && data.createdAt is number;
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['full_name']) && data.keys().size() >= 1 && data.keys().size() <= 7
+          && data.full_name is string && data.full_name.size() <= 128
+          && (!('institution' in data) || (data.institution is string && data.institution.size() <= 200))
+          && (!('department' in data) || (data.department is string && data.department.size() <= 200))
+          && (!('research_area' in data) || (data.research_area is string && data.research_area.size() <= 200))
+          && (!('orcid' in data) || (data.orcid is string && data.orcid.size() <= 100))
+          && (!('bio' in data) || (data.bio is string && data.bio.size() <= 1000))
+          && (!('photo_url' in data) || (data.photo_url is string && data.photo_url.size() <= 2000));
+    }
+
+    function isValidDriveItem(data) {
+      return data.keys().hasAll(['title', 'item_type', 'category', 'created_at', 'user_id'])
+          && data.title is string && data.title.size() <= 256
+          && data.item_type in ['Document', 'Link']
+          && data.category is string && data.category.size() <= 100
+          && data.created_at is number
+          && data.user_id is string && data.user_id.size() <= 128
+          && (!('file_path' in data) || (data.file_path == null || (data.file_path is string && data.file_path.size() <= 2000)))
+          && (!('external_url' in data) || (data.external_url == null || (data.external_url is string && data.external_url.size() <= 2000)))
+          && (!('abstract' in data) || (data.abstract == null || (data.abstract is string && data.abstract.size() <= 2000)))
+          && (!('visibility' in data) || (data.visibility == null || (data.visibility is string && data.visibility.size() <= 50)));
+    }
+
+    // Rules
+    match /sys_config/admins/{emailId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only bootstrapped from backend/console
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && (incoming().role == 'Scholar' || incoming().email == 'bcicomputerpoint@gmail.com' || incoming().email == 'admin@onusandhan.com');
+      allow update: if isValidId(userId) && (
+         (isOwner(userId) && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['email']) && incoming().role == existing().role) ||
+         isAdmin()
+      );
+      allow delete: if isAdmin();
+
+      match /profile/info {
+        allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow list: if false; // Single doc architecture
+        allow create: if isValidId(userId) && isOwner(userId) && isValidProfile(incoming());
+        allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidProfile(incoming());
+        allow delete: if isAdmin();
+      }
+
+      match /drive_items/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && (isOwner(userId) || isAdmin());
+        allow list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        
+        allow create: if isValidId(userId) && isValidId(itemId) && 
+          (isOwner(userId) || isAdmin()) && 
+          isValidDriveItem(incoming()) && 
+          incoming().user_id == userId &&
+          exists(/databases/$(database)/documents/users/$(userId));
+
+        allow update: if isValidId(userId) && isValidId(itemId) && (
+          (isOwner(userId) && isValidDriveItem(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'category', 'file_path', 'external_url', 'abstract', 'visibility']) && incoming().user_id == existing().user_id && incoming().created_at == existing().created_at && incoming().item_type == existing().item_type) ||
+          isAdmin()
+        );
+
+        allow delete: if isValidId(userId) && isValidId(itemId) && (isOwner(userId) || isAdmin());
+      }
+    }
+
+    // For backend compatibility on Drive Items, we can also query centrally using collectionGroup if admin.
+    match /{path=**}/drive_items/{itemId} {
+      allow read: if isAdmin();
+    }
+  }
+}

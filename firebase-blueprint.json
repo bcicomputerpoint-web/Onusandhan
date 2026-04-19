@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User core identity documentation.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "The user's registered email address" },
+        "role": { "type": "string", "enum": ["Scholar", "Admin"], "description": "System role" },
+        "createdAt": { "type": "number", "description": "Timestamp of account creation" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "Profile": {
+      "title": "Profile",
+      "description": "User's academic profile containing public/private metadata.",
+      "type": "object",
+      "properties": {
+        "full_name": { "type": "string" },
+        "institution": { "type": "string" },
+        "department": { "type": "string" },
+        "research_area": { "type": "string" },
+        "orcid": { "type": "string" },
+        "bio": { "type": "string" }
+      },
+      "required": ["full_name"]
+    },
+    "DriveItem": {
+      "title": "DriveItem",
+      "description": "A document or link submitted by the user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "item_type": { "type": "string", "enum": ["Document", "Link"] },
+        "category": { "type": "string" },
+        "file_path": { "type": "string" },
+        "external_url": { "type": "string" },
+        "abstract": { "type": "string" },
+        "created_at": { "type": "number" },
+        "visibility": { "type": "string" },
+        "user_id": { "type": "string", "description": "The ID of the user who owns this item" }
+      },
+      "required": ["title", "item_type", "category", "created_at", "user_id"]
+    }
+  },
+  "firestore": {
+    "sys_config/admins": {
+      "schema": { "type": "object", "properties": { "email": { "type": "string" } } },
+      "description": "List of admin users to bootstrap root privileges"
+    },
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Core users representation."
+    },
+    "users/{userId}/profile/info": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "User profile metadata."
+    },
+    "users/{userId}/drive_items/{itemId}": {
+      "schema": { "$ref": "#/entities/DriveItem" },
+      "description": "User uploaded items or links."
+    }
+  }
+}
