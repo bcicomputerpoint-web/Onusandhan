@@ -110,7 +110,7 @@ export const TopNav = ({ toggleSidebar, userRole, userName, photoUrl }: { toggle
                  <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">{userRole}</span>
               </div>
               <div className="w-[36px] h-[36px] rounded-full bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center text-white font-semibold text-[14px] shadow-sm ring-2 ring-white overflow-hidden">
-                 {photoUrl ? <img src={photoUrl} alt="User" className="w-full h-full object-cover" /> : userName?.charAt(0)?.toUpperCase()}
+                 {photoUrl ? <img src={photoUrl} alt="User" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : userName?.charAt(0)?.toUpperCase()}
               </div>
            </div>
         </div>

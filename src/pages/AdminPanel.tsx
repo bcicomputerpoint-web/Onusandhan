@@ -4,7 +4,7 @@ import { ProfileCard, SummaryCard, DataTable, LinkForm, ConfirmModal } from '../
 import { Users, FileText, CheckCircle, UserPlus, Shield, Activity, Eye, Check, X as XIcon, UploadCloud, Link as LinkIcon, Trash2, ExternalLink } from 'lucide-react';
 import { Button } from '../components/ui';
 import { collection, query, getDocs, addDoc, deleteDoc, doc, collectionGroup } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 
 export default function AdminPanel() {
@@ -74,29 +74,9 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const uploadRes = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      
-      const contentType = uploadRes.headers.get('content-type');
-      let resData;
-      
-      if (contentType && contentType.includes('application/json')) {
-         resData = await uploadRes.json();
-      } else {
-         const textData = await uploadRes.text();
-         throw new Error(`Server returned non-JSON response (${uploadRes.status}): ` + textData.substring(0, 100));
-      }
-
-      if (!uploadRes.ok) {
-         throw new Error(resData?.error || 'Failed to upload file to backend');
-      }
-      
-      const downloadUrl = resData.url;
+      const storageRef = ref(storage, `users/${selectedUserId}/documents/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(storageRef);
 
       const docData = {
         title: file.name,
@@ -142,10 +122,13 @@ export default function AdminPanel() {
     try {
       await deleteDoc(doc(db, `${itemToDelete.parentPath}/drive_items`, itemToDelete.id));
       
-      if (itemToDelete.file_path) {
-         await fetch(`/api/delete-file?file_path=${encodeURIComponent(itemToDelete.file_path)}`, {
-           method: 'DELETE'
-         });
+      if (itemToDelete.file_path && itemToDelete.file_path.includes('firebasestorage.googleapis.com')) {
+         try {
+            const fileRef = ref(storage, itemToDelete.file_path);
+            await deleteObject(fileRef);
+         } catch (err) {
+            console.warn("Storage item missing or couldn't delete", err);
+         }
       }
       
       await fetchStats(); // refresh everything

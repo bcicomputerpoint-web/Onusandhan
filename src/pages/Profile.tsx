@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../App';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { Button, Input } from '../components/ui';
 import { User, BookOpen, CheckCircle } from 'lucide-react';
 
@@ -58,37 +59,19 @@ export default function Profile() {
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user?.uid) return;
     
     setIsUploadingPhoto(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      const storageRef = ref(storage, `users/${user.uid}/profile_photos/${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
       
-      const uploadRes = await fetch('/api/upload', {
-         method: 'POST',
-         body: formData
-      });
-      
-      const contentType = uploadRes.headers.get('content-type');
-      let resData;
-      
-      const text = await uploadRes.text();
-      try {
-         resData = JSON.parse(text);
-      } catch (e) {
-         throw new Error(`Server returned non-JSON response (${uploadRes.status}): ${text.substring(0, 100)}`);
-      }
-
-      if (!uploadRes.ok) {
-         throw new Error(resData?.error || 'Failed to upload photo');
-      }
-      
-      const newProfile = { ...profile, photo_url: resData.url };
+      const newProfile = { ...profile, photo_url: downloadURL };
       setProfile(newProfile);
       
       const pRef = doc(db, `users/${user.uid}/profile`, 'info');
-      await setDoc(pRef, { photo_url: resData.url }, { merge: true });
+      await setDoc(pRef, { photo_url: downloadURL }, { merge: true });
       
       if (refreshAuth) await refreshAuth();
     } catch (err: any) {

@@ -4,7 +4,7 @@ import { useAuth } from '../App';
 import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal } from '../components/dashboard/DashboardComponents';
 import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode } from 'lucide-react';
 import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Button } from '../components/ui';
 
@@ -81,29 +81,9 @@ export default function Dashboard() {
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       try {
-         const formData = new FormData();
-         formData.append('file', file);
-         
-         const uploadRes = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-         });
-         
-         const contentType = uploadRes.headers.get('content-type');
-         let resData;
-         
-         const textData = await uploadRes.text();
-         try {
-            resData = JSON.parse(textData);
-         } catch (e) {
-            throw new Error(`Server returned non-JSON response (${uploadRes.status}): ` + textData.substring(0, 100));
-         }
-
-         if (!uploadRes.ok) {
-            throw new Error(resData?.error || 'Failed to upload file to backend');
-         }
-         
-         const downloadUrl = resData.url;
+         const storageRef = ref(storage, `users/${user.uid}/documents/${Date.now()}_${file.name}`);
+         await uploadBytes(storageRef, file);
+         const downloadUrl = await getDownloadURL(storageRef);
 
          const docData = {
            title: file.name,
@@ -166,10 +146,15 @@ export default function Dashboard() {
         await deleteDoc(doc(db, `users/${user.uid}/drive_items`, id));
         setItems(items.filter(item => item.id !== id));
         
-        if (file_path) {
-           await fetch(`/api/delete-file?file_path=${encodeURIComponent(file_path)}`, {
-             method: 'DELETE'
-           });
+        if (file_path && file_path.includes('firebasestorage.googleapis.com')) {
+           try {
+              // Extract path from download URL or store ref path instead next time
+              // Best effort: simply use regex or try to construct ref from URL
+              const fileRef = ref(storage, file_path);
+              await deleteObject(fileRef);
+           } catch (err) {
+              console.warn("Storage item missing or couldn't delete", err);
+           }
         }
       } catch (e) {
         console.error('Error during deletion', e);
