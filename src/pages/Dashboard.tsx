@@ -53,11 +53,11 @@ export default function Dashboard() {
    }, [user]);
 
    const displayProfile = profile ? {
-      photo: '', name: profile.full_name || user?.email?.split('@')[0] || 'Scholar', role: user?.role,
+      photo: profile.photo_url || user?.photo_url || '', name: profile.full_name || user?.email?.split('@')[0] || 'Scholar', role: user?.role,
       course: profile.institution || 'CS', university: profile.department || 'Tech University',
       session: profile.research_area || '2024-2026', email: user?.email, mobile: '+1 234 567 890'
    } : {
-      photo: '', name: user?.email?.split('@')[0] || 'Scholar User', role: user?.role || 'Research Scholar',
+      photo: user?.photo_url || '', name: user?.email?.split('@')[0] || 'Scholar User', role: user?.role || 'Research Scholar',
       course: 'Ph.D. Computer Science', university: 'National Tech University',
       session: '2024-2027', email: user?.email || 'scholar@example.com', mobile: '+1 234 567 890'
    };

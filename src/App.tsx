@@ -26,6 +26,7 @@ interface AuthContextType {
   user: AppUser | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refreshAuth: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -89,13 +90,36 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  const refreshAuth = async () => {
+    if (!auth.currentUser) return;
+    const firebaseUser = auth.currentUser;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      const pDoc = await getDoc(doc(db, `users/${firebaseUser.uid}/profile`, 'info'));
+      const profileData = pDoc.exists() ? pDoc.data() : {};
+      
+      const isAdminEmail = firebaseUser.email === 'bcicomputerpoint@gmail.com' || firebaseUser.email === 'admin@onusandhan.com';
+      const role = isAdminEmail ? 'Admin' : (userDoc.exists() ? userDoc.data().role : 'Scholar');
+      
+      setUser({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        role: role,
+        full_name: profileData.full_name || firebaseUser.email?.split('@')[0],
+        photo_url: profileData.photo_url
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const logout = async () => {
     await signOut(auth);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshAuth }}>
       <Router>
         <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
           <Routes>

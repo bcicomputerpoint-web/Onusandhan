@@ -6,7 +6,7 @@ import { Button, Input } from '../components/ui';
 import { User, BookOpen, CheckCircle } from 'lucide-react';
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const [profile, setProfile] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -84,7 +84,13 @@ export default function Profile() {
          throw new Error(resData?.error || 'Failed to upload photo');
       }
       
-      setProfile({ ...profile, photo_url: resData.url });
+      const newProfile = { ...profile, photo_url: resData.url };
+      setProfile(newProfile);
+      
+      const pRef = doc(db, `users/${user.uid}/profile`, 'info');
+      await setDoc(pRef, { photo_url: resData.url }, { merge: true });
+      
+      if (refreshAuth) await refreshAuth();
     } catch (err: any) {
       console.error(err);
       alert(`Upload failed: ${err.message || 'Unknown error'}`);
