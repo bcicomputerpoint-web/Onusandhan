@@ -113,6 +113,11 @@ export default function App() {
           const pDoc = await getDoc(doc(db, `users/${firebaseUser.uid}/profile`, 'info'));
           const profileData = pDoc.exists() ? pDoc.data() : {};
           
+          // Sync language preference from Firestore to App State
+          if (profileData.preferred_language && profileData.preferred_language !== language) {
+            setLanguage(profileData.preferred_language as Language);
+          }
+
           const isAdminEmail = firebaseUser.email === 'bcicomputerpoint@gmail.com' || firebaseUser.email === 'admin@onusandhan.com';
           const role = isAdminEmail ? 'Admin' : (userDoc.exists() ? userDoc.data().role : 'Scholar');
           

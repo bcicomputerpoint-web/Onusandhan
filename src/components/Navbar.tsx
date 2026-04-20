@@ -5,8 +5,20 @@ import { Button } from './ui';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
-  const { language, setLanguage, t } = useLanguage();
+  const { language, setLanguage: setLangState, t } = useLanguage();
   const navigate = useNavigate();
+
+  const setLanguage = async (lang: any) => {
+    setLangState(lang);
+    if (user?.uid) {
+      try {
+        const pRef = doc(db, `users/${user.uid}/profile`, 'info');
+        await updateDoc(pRef, { preferred_language: lang });
+      } catch (err) {
+        console.error("Failed to sync language to profile:", err);
+      }
+    }
+  };
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur-md">

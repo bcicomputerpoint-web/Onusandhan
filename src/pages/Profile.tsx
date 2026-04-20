@@ -45,7 +45,8 @@ export default function Profile() {
         research_area: profile.research_area || '',
         orcid: profile.orcid || '',
         bio: profile.bio || '',
-        photo_url: profile.photo_url || ''
+        photo_url: profile.photo_url || '',
+        preferred_language: profile.preferred_language || 'en'
       }, { merge: true });
       
       setSaved(true);
@@ -142,6 +143,25 @@ export default function Profile() {
                 <div>
                   <label className="block text-sm font-medium mb-1">ORCID / Google Scholar Link</label>
                   <Input value={profile.orcid || ''} onChange={e => setProfile({...profile, orcid: e.target.value})} />
+                </div>
+                <div className="col-span-full">
+                  <label className="block text-sm font-medium mb-1">Preferred Language</label>
+                  <div className="flex gap-4">
+                    {['en', 'bn'].map((lang) => (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => setProfile({...profile, preferred_language: lang})}
+                        className={`flex-1 py-3 rounded-xl border-2 font-bold transition-all ${
+                          (profile.preferred_language || 'en') === lang 
+                          ? 'border-indigo-600 bg-indigo-50 text-indigo-600' 
+                          : 'border-slate-100 bg-white text-slate-500 hover:border-slate-200'
+                        }`}
+                      >
+                        {lang === 'en' ? 'English' : 'বাংলা (Bengali)'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="col-span-full">
                   <label className="block text-sm font-medium mb-1">Short Bio</label>
