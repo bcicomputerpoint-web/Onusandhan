@@ -1,29 +1,36 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../../App';
+import { useAuth, useLanguage } from '../../App';
+import { TranslationKey } from '../../lib/translations';
 import { 
    LayoutDashboard, User, Folder, Upload, Link as LinkIcon, Settings, 
    LogOut, Search, Bell, Menu, Users, FileText, CheckSquare, Activity,
-   Plus, HardDrive, Share2, Clock, Star, Trash, HelpCircle, UserCircle, Library
+   Plus, HardDrive, Share2, Clock, Star, Trash, HelpCircle, UserCircle, Library,
+   ClipboardCheck, Calendar, BarChart3
 } from 'lucide-react';
 
 export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen: boolean, setOpen: (v: boolean) => void }) => {
    const location = useLocation();
    const { logout } = useAuth();
+   const { t } = useLanguage();
    
-   const userLinks = [
-     { name: 'My Dashboard', path: '/dashboard', icon: LayoutDashboard },
-     { name: 'My Profile', path: '/profile', icon: UserCircle },
-     { name: 'Recent Activity', path: '/dashboard?tab=recent', icon: Clock },
-     { name: 'Starred', path: '/dashboard?tab=starred', icon: Star },
-     { name: 'Trash', path: '/dashboard?tab=trash', icon: Trash },
+   const userLinks: { name: string, translationKey: TranslationKey, path: string, icon: any }[] = [
+     { name: 'Dashboard', translationKey: 'nav_dashboard', path: '/dashboard', icon: LayoutDashboard },
+     { name: 'My Courses', translationKey: 'nav_lms', path: '/lms', icon: Library },
+     { name: 'Assignments', translationKey: 'lms_assignments', path: '/lms/assignments', icon: ClipboardCheck },
+     { name: 'Quizzes', translationKey: 'lms_quizzes', path: '/lms/quizzes', icon: HelpCircle },
+     { name: 'Attendance', translationKey: 'lms_attendance', path: '/lms/attendance', icon: Calendar },
+     { name: 'Study Materials', translationKey: 'lms_resources', path: '/lms/materials', icon: FileText },
+     { name: 'My Profile', translationKey: 'nav_profile', path: '/profile', icon: UserCircle },
    ];
    
-   const adminLinks = [
-     { name: 'Overview', path: '/admin', icon: LayoutDashboard },
-     { name: 'Users', path: '/admin/users', icon: Users },
-     { name: 'All Documents', path: '/admin/docs', icon: Folder },
-     { name: 'Analytics', path: '/admin/analytics', icon: Activity },
+   const adminLinks: { name: string, translationKey: TranslationKey, path: string, icon: any }[] = [
+     { name: 'Overview', translationKey: 'course_overview', path: '/admin', icon: LayoutDashboard },
+     { name: 'LMS Management', translationKey: 'nav_admin', path: '/admin/lms', icon: Library },
+     { name: 'LMS Analytics', translationKey: 'dash_academic_brief', path: '/admin/analytics', icon: BarChart3 },
+     { name: 'Users', translationKey: 'nav_profile', path: '/admin/users', icon: Users },
+     { name: 'All Documents', translationKey: 'lms_resources', path: '/admin/docs', icon: Folder },
+     { name: 'System Reports', translationKey: 'dash_academic_brief', path: '/admin/reports', icon: Activity },
    ];
    
    const links = isAdmin ? adminLinks : userLinks;
@@ -37,7 +44,7 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
                  <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-200">
                     <span className="text-white font-bold text-lg leading-none">O</span>
                  </div>
-                 <span className="text-[18px] font-bold text-slate-800 tracking-tight">Onusandhan</span>
+                 <span className="text-[18px] font-bold text-slate-800 tracking-tight">{t('onusandhan_logo')}</span>
               </div>
            </div>
            
@@ -62,7 +69,7 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
                      }`}
                    >
                      <link.icon className={`w-[18px] h-[18px] mr-3 flex-shrink-0 ${active ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                     {link.name}
+                     {t(link.translationKey)}
                    </Link>
                  )
               })}
@@ -70,7 +77,7 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
            
            <div className="p-4 border-t border-slate-100 mt-auto">
              <button onClick={logout} className="flex items-center px-3 py-2.5 w-full text-[14px] font-medium text-slate-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors group">
-                <LogOut className="w-[18px] h-[18px] mr-3 text-slate-400 group-hover:text-red-500 transition-colors" /> Sign out
+                <LogOut className="w-[18px] h-[18px] mr-3 text-slate-400 group-hover:text-red-500 transition-colors" /> {t('nav_logout')}
              </button>
            </div>
         </aside>
@@ -79,6 +86,8 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
 };
 
 export const TopNav = ({ toggleSidebar, userRole, userName, photoUrl }: { toggleSidebar: () => void, userRole: string, userName: string, photoUrl?: string }) => {
+   const { language, setLanguage, t } = useLanguage();
+   
    return (
      <header className="h-[72px] bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-8 z-30 sticky top-0 transition-all">
         <div className="flex items-center flex-1">
@@ -90,13 +99,29 @@ export const TopNav = ({ toggleSidebar, userRole, userName, photoUrl }: { toggle
               <Search className="w-[18px] h-[18px] text-slate-400 mr-2 flex-shrink-0" />
               <input 
                 type="text" 
-                placeholder="Search records and documents..." 
+                placeholder={t('btn_search')} 
                 className="w-full bg-transparent border-none text-[14px] outline-none placeholder:text-slate-400 text-slate-800 py-1"
               />
            </div>
         </div>
         
         <div className="flex items-center gap-3">
+           {/* Language Switcher */}
+           <div className="hidden sm:flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl mr-2">
+              <button 
+                onClick={() => setLanguage('en')}
+                className={`px-3 py-1 rounded-lg text-[10px] uppercase font-black transition-all ${language === 'en' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+              >
+                EN
+              </button>
+              <button 
+                onClick={() => setLanguage('bn')}
+                className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all ${language === 'bn' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+              >
+                বাংলা
+              </button>
+           </div>
+
            <button className="p-2.5 text-slate-400 hover:bg-slate-50 hover:text-slate-600 rounded-full transition-colors hidden sm:flex items-center justify-center">
               <HelpCircle className="w-[18px] h-[18px]" />
            </button>
@@ -123,7 +148,7 @@ export function DashboardLayout({ children, isAdmin = false }: { children: React
    const { user } = useAuth();
    
    return (
-     <div className="flex h-screen overflow-hidden bg-slate-50 font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
+     <div className="flex h-screen overflow-hidden bg-[#f4f7f9] font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
         <Sidebar isAdmin={isAdmin} isOpen={sidebarOpen} setOpen={setSidebarOpen} />
         <div className="flex-1 flex flex-col relative min-w-0 overflow-hidden">
            <TopNav 
@@ -132,7 +157,7 @@ export function DashboardLayout({ children, isAdmin = false }: { children: React
               userName={user?.full_name || (isAdmin ? 'Administrator' : 'My Account')}
               photoUrl={user?.photo_url}
            />
-           <main className="flex-1 overflow-y-auto w-full">
+           <main className="flex-1 overflow-y-auto w-full bg-[#f4f7f9]">
              <div className="p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto w-full min-h-full">
                 {children}
              </div>

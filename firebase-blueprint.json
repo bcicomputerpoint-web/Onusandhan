@@ -1,33 +1,33 @@
 {
   "entities": {
     "User": {
-      "title": "User",
-      "description": "User core identity documentation.",
+      "title": "User Account",
+      "description": "Core user account information",
       "type": "object",
       "properties": {
-        "email": { "type": "string", "description": "The user's registered email address" },
-        "role": { "type": "string", "enum": ["Research Scholar", "Student", "Centre", "Scholar", "Admin"], "description": "System role" },
-        "createdAt": { "type": "number", "description": "Timestamp of account creation" }
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["Admin", "Scholar", "Student", "Centre"] },
+        "createdAt": { "type": "number" }
       },
       "required": ["email", "role", "createdAt"]
     },
     "Profile": {
-      "title": "Profile",
-      "description": "User's academic profile containing public/private metadata.",
+      "title": "User Profile",
+      "description": "Public and private profile details for academic identity",
       "type": "object",
       "properties": {
         "full_name": { "type": "string" },
+        "photo_url": { "type": "string" },
         "institution": { "type": "string" },
         "department": { "type": "string" },
         "research_area": { "type": "string" },
-        "orcid": { "type": "string" },
-        "bio": { "type": "string" }
+        "mobile": { "type": "string" }
       },
       "required": ["full_name"]
     },
     "DriveItem": {
-      "title": "DriveItem",
-      "description": "A document or link submitted by the user.",
+      "title": "Drive Item",
+      "description": "Documents or links managed by the user",
       "type": "object",
       "properties": {
         "title": { "type": "string" },
@@ -36,29 +36,115 @@
         "file_path": { "type": "string" },
         "external_url": { "type": "string" },
         "abstract": { "type": "string" },
+        "user_id": { "type": "string" },
         "created_at": { "type": "number" },
-        "visibility": { "type": "string" },
-        "user_id": { "type": "string", "description": "The ID of the user who owns this item" }
+        "visibility": { "type": "string", "enum": ["Private", "Public"] }
       },
-      "required": ["title", "item_type", "category", "created_at", "user_id"]
+      "required": ["title", "item_type", "category", "user_id", "created_at", "visibility"]
+    },
+    "Course": {
+      "title": "Academic Course",
+      "description": "Educational course offered on the platform",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "instructor_id": { "type": "string" },
+        "thumbnail_url": { "type": "string" },
+        "category": { "type": "string" },
+        "level": { "type": "string", "enum": ["School", "College", "PhD"] },
+        "created_at": { "type": "number" }
+      },
+      "required": ["title", "instructor_id", "level", "created_at"]
+    },
+    "Lesson": {
+      "title": "Course Lesson",
+      "description": "Specific instructional unit within a module",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content_type": { "type": "string", "enum": ["Video", "PDF", "Quiz"] },
+        "content_url": { "type": "string" },
+        "duration_mins": { "type": "number" },
+        "order": { "type": "number" }
+      },
+      "required": ["title", "content_type", "order"]
+    },
+    "Assignment": {
+      "title": "Academic Assignment",
+      "description": "Task for students to complete and submit",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "due_date": { "type": "number" },
+        "max_points": { "type": "number" },
+        "course_id": { "type": "string" }
+      },
+      "required": ["title", "due_date", "course_id"]
+    },
+    "Enrollment": {
+      "title": "Course Enrollment",
+      "description": "Subscription of a student to a course",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "course_id": { "type": "string" },
+        "progress": { "type": "number" },
+        "enrolled_at": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active", "Completed"] }
+      },
+      "required": ["user_id", "course_id", "enrolled_at", "status"]
+    },
+    "Submission": {
+      "title": "Assignment Submission",
+      "description": "Student work submitted for an assignment",
+      "type": "object",
+      "properties": {
+        "assignment_id": { "type": "string" },
+        "course_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "user_name": { "type": "string" },
+        "submission_url": { "type": "string" },
+        "submitted_at": { "type": "number" },
+        "status": { "type": "string", "enum": ["Submitted", "Graded"] },
+        "grade": { "type": "number" }
+      },
+      "required": ["assignment_id", "course_id", "user_id", "submission_url", "status"]
     }
   },
   "firestore": {
-    "sys_config/admins": {
-      "schema": { "type": "object", "properties": { "email": { "type": "string" } } },
-      "description": "List of admin users to bootstrap root privileges"
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Base user document"
     },
-    "users/{userId}": {
-      "schema": { "$ref": "#/entities/User" },
-      "description": "Core users representation."
+    "/users/{userId}/profile/info": {
+      "schema": "Profile",
+      "description": "Single profile info document"
     },
-    "users/{userId}/profile/info": {
-      "schema": { "$ref": "#/entities/Profile" },
-      "description": "User profile metadata."
+    "/users/{userId}/drive_items/{itemId}": {
+      "schema": "DriveItem",
+      "description": "List of user docs and links"
     },
-    "users/{userId}/drive_items/{itemId}": {
-      "schema": { "$ref": "#/entities/DriveItem" },
-      "description": "User uploaded items or links."
+    "/courses/{courseId}": {
+      "schema": "Course",
+      "description": "Top-level course metadata"
+    },
+    "/courses/{courseId}/lessons/{lessonId}": {
+      "schema": "Lesson",
+      "description": "Lessons organized within a course"
+    },
+    "/courses/{courseId}/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Assignments directly under a course"
+    },
+    "/enrollments/{enrollmentId}": {
+      "schema": "Enrollment",
+      "description": "Relationship between users and courses"
+    },
+    "/submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Student work records"
     }
   }
 }

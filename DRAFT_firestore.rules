@@ -15,19 +15,10 @@ service cloud.firestore {
     
     // Admin check: checks token email or the stored role in user document
     function isAdmin() { 
-      let isEmailAdmin = isSignedIn() && (
+      return isSignedIn() && (
         request.auth.token.email == 'bcicomputerpoint@gmail.com' ||
-        request.auth.token.email == 'admin@onusandhan.com'
-      );
-      // Fallback to Firestore check if email isn't in hardcoded list
-      return isEmailAdmin || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin');
-    }
-
-    // ----------------------------------------------------
-    // COLLECTION GROUPS (For Admin Global Views)
-    // ----------------------------------------------------
-    match /{path=**}/drive_items/{itemId} {
-      allow list: if isAdmin();
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin'
+      ); 
     }
 
     // ----------------------------------------------------
@@ -116,73 +107,6 @@ service cloud.firestore {
 
         allow delete: if isOwner(userId) || isAdmin();
       }
-    }
-
-    // ----------------------------------------------------
-    // LMS COLLECTIONS
-    // ----------------------------------------------------
-    
-    // Courses Collection
-    match /courses/{courseId} {
-      function isValidCourse(data) {
-        return data.keys().hasAll(['title', 'instructor_id', 'level', 'created_at'])
-          && data.title is string && data.title.size() <= 200
-          && data.instructor_id is string
-          && data.level in ['School', 'College', 'PhD']
-          && data.created_at is number;
-      }
-
-      allow read: if isSignedIn();
-      allow create: if (isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Centre')) && isValidCourse(incoming());
-      allow update: if (isAdmin() || (isSignedIn() && existing().instructor_id == request.auth.uid)) && isValidCourse(incoming());
-      allow delete: if isAdmin();
-
-      // Lessons Sub-collection
-      match /lessons/{lessonId} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.instructor_id == request.auth.uid);
-      }
-      
-      // Assignments Sub-collection
-      match /assignments/{assignmentId} {
-        allow read: if isSignedIn();
-        allow write: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/courses/$(courseId)).data.instructor_id == request.auth.uid);
-      }
-    }
-
-    // Enrollments Collection
-    match /enrollments/{enrollmentId} {
-      function isValidEnrollment(data) {
-        return data.keys().hasAll(['user_id', 'course_id', 'enrolled_at', 'status'])
-          && data.user_id == request.auth.uid
-          && data.course_id is string
-          && data.enrolled_at is number
-          && data.status in ['Active', 'Completed'];
-      }
-      
-      allow list: if (isSignedIn() && resource.data.user_id == request.auth.uid) || isAdmin();
-      allow get: if (isSignedIn() && resource.data.user_id == request.auth.uid) || isAdmin();
-      allow create: if isSignedIn() && isValidEnrollment(incoming());
-      allow update: if (isSignedIn() && existing().user_id == request.auth.uid) || isAdmin();
-      allow delete: if isAdmin();
-    }
-
-    // Submissions Collection
-    match /submissions/{submissionId} {
-      function isValidSubmission(data) {
-        return data.keys().hasAll(['assignment_id', 'course_id', 'user_id', 'user_name', 'submission_url', 'submitted_at', 'status', 'grade'])
-          && data.user_id == request.auth.uid
-          && data.assignment_id is string
-          && data.course_id is string
-          && data.submission_url is string
-          && data.status == 'Submitted';
-      }
-
-      allow list: if (isSignedIn() && resource.data.user_id == request.auth.uid) || isAdmin();
-      allow get: if (isSignedIn() && resource.data.user_id == request.auth.uid) || isAdmin();
-      allow create: if isSignedIn() && isValidSubmission(incoming());
-      allow update: if isAdmin(); // Only admins can grade
-      allow delete: if isAdmin();
     }
   }
 }

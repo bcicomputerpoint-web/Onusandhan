@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../App';
-import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal } from '../components/dashboard/DashboardComponents';
-import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode } from 'lucide-react';
+import { useAuth, useLanguage } from '../App';
+import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal, ProfileStrengthTracker } from '../components/dashboard/DashboardComponents';
+import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode, BookOpen } from 'lucide-react';
 import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -10,6 +10,7 @@ import { Button } from '../components/ui';
 
 export default function Dashboard() {
    const { user } = useAuth();
+   const { t } = useLanguage();
    const navigate = useNavigate();
    const [items, setItems] = useState<any[]>([]);
    const [profile, setProfile] = useState<any>(null);
@@ -176,6 +177,33 @@ export default function Dashboard() {
 
    const recentActivity = items.slice(0, 5);
 
+   const calculateProfileStrength = () => {
+      if (!profile) return { score: 20, missing: ['profile_details'] };
+      const fields = [
+         { key: 'full_name', importance: 20 },
+         { key: 'institution', importance: 20 },
+         { key: 'department', importance: 15 },
+         { key: 'research_area', importance: 15 },
+         { key: 'mobile', importance: 15 },
+         { key: 'photo_url', importance: 15 }
+      ];
+      
+      let score = 0;
+      const missing: string[] = [];
+      
+      fields.forEach(f => {
+         if (profile[f.key] || (f.key === 'photo_url' && user?.photo_url)) {
+            score += f.importance;
+         } else {
+            missing.push(f.key);
+         }
+      });
+      
+      return { score, missing };
+   };
+
+   const { score, missing } = calculateProfileStrength();
+
    const getFileIcon = (filename: string) => {
       const ext = filename?.split('.').pop()?.toLowerCase();
       if (['pdf'].includes(ext || '')) return <FileType2 className="w-5 h-5 text-red-500"/>;
@@ -230,55 +258,88 @@ export default function Dashboard() {
       <div className="space-y-10 animate-in fade-in duration-500 max-w-[1600px] mx-auto pb-24 relative">
          {/* Top Actions Section */}
          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <h1 className="text-[22px] font-bold text-slate-800 px-2 hidden md:block tracking-tight">Welcome back, {displayProfile.name}</h1>
+            <h1 className="text-[22px] font-bold text-slate-800 px-2 hidden md:block tracking-tight">{t('dash_welcome')}, {displayProfile.name}</h1>
             <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                <Button variant="primary" className="bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 text-white rounded-lg font-medium h-[40px] px-5 flex items-center gap-2 flex-shrink-0 transition-colors" onClick={() => { document.getElementById('document-uploads-section')?.scrollIntoView({ behavior: 'smooth' }); }}>
-                 <FilePlus className="w-[18px] h-[18px]" /> Upload Document
+                 <FilePlus className="w-[18px] h-[18px]" /> {t('assign_upload_work')}
                </Button>
                <Button variant="outline" className="border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-lg font-medium h-[40px] px-5 flex items-center gap-2 flex-shrink-0 transition-colors" onClick={() => { document.getElementById('link-form-section')?.scrollIntoView({ behavior: 'smooth' }); }}>
-                 <LinkIcon className="w-[18px] h-[18px]" /> Add Link
+                 <LinkIcon className="w-[18px] h-[18px]" /> {t('nav_lms')}
                </Button>
             </div>
          </div>
 
          {/* Top Section: Profile + Summaries */}
          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
-            <div className="lg:col-span-4 h-full">
+            <div className="lg:col-span-4 flex flex-col gap-6 h-full">
                <ProfileCard details={displayProfile} onEdit={() => navigate('/profile')} />
+               <ProfileStrengthTracker score={score} missingFields={missing} />
             </div>
             <div className="lg:col-span-8 flex flex-col pt-1">
-               <h2 className="text-[18px] font-bold text-slate-800 mb-4 tracking-tight">Dashboard Overview</h2>
+               <h2 className="text-[18px] font-bold text-slate-800 mb-4 tracking-tight">{t('dash_academic_brief')}</h2>
                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                  <SummaryCard title="Total Documents" value={fileItems.length} icon={FileText} />
-                  <SummaryCard title="Saved Links" value={linkItems.length} icon={LinkIcon} />
-                  <SummaryCard title="Recent Activity" value={recentActivity.length} icon={Activity} />
-                  <SummaryCard title="Platform Active" value={items.length > 0 ? "Yes" : "No"} icon={Play} />
+                  <SummaryCard title={t('lms_resources')} value={fileItems.length} icon={FileText} status={fileItems.length > 0 ? 'active' : 'idle'} />
+                  <SummaryCard title={t('nav_lms')} value={linkItems.length} icon={LinkIcon} status={linkItems.length > 0 ? 'active' : 'idle'} />
+                  <SummaryCard title={t('dash_completed_tasks')} value={recentActivity.length} icon={Activity} />
+                  <SummaryCard title={t('quiz_passed')} value={items.length > 0 ? "Yes" : "No"} icon={Play} />
                </div>
                
-               {/* Recent Activity Mini-Feed */}
-               <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col relative overflow-hidden">
-                   <h3 className="text-[15px] font-bold text-slate-800 mb-5 flex items-center gap-2 tracking-tight"><Clock className="w-4 h-4 text-slate-400"/> Recent Activity</h3>
-                   {recentActivity.length > 0 ? (
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
+                  {/* Classroom / LMS Early Look */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col relative overflow-hidden group">
+                      <div className="flex items-center justify-between mb-5">
+                         <h3 className="text-[15px] font-bold text-slate-800 flex items-center gap-2 tracking-tight"><BookOpen className="w-4 h-4 text-indigo-500"/> {t('dash_enrolled_courses')}</h3>
+                         <span className="text-[11px] font-bold bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md uppercase tracking-wider">LMS Preview</span>
+                      </div>
                       <div className="space-y-4">
-                         {recentActivity.map((act, i) => (
-                            <div key={act.id} className="flex items-center gap-4 group">
-                               <div className="w-10 h-10 rounded-xl bg-slate-50 group-hover:bg-indigo-50 flex items-center justify-center text-slate-500 group-hover:text-indigo-600 transition-colors">
-                                  {act.item_type === 'Document' ? <FileText className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
-                               </div>
-                               <div className="flex-1 min-w-0">
-                                  <p className="text-[14px] text-slate-700 truncate font-medium"><span className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">Uploaded</span> {act.title}</p>
-                                  <p className="text-[12px] text-slate-400">{new Date(act.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                               </div>
+                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all cursor-pointer">
+                            <div className="flex justify-between items-start mb-2">
+                               <h4 className="text-[14px] font-bold text-slate-800">Advanced Research Methodology</h4>
+                               <span className="text-[12px] font-semibold text-slate-500">85%</span>
                             </div>
-                         ))}
+                            <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                               <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: '85%' }}></div>
+                            </div>
+                         </div>
+                         <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all cursor-pointer opacity-80">
+                            <div className="flex justify-between items-start mb-2">
+                               <h4 className="text-[14px] font-bold text-slate-800">Academic Writing & Ethics</h4>
+                               <span className="text-[12px] font-semibold text-slate-500">12%</span>
+                            </div>
+                            <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                               <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ width: '12%' }}></div>
+                            </div>
+                         </div>
                       </div>
-                   ) : (
-                      <div className="flex flex-col items-center justify-center text-center py-8">
-                         <div className="p-4 bg-slate-50 rounded-2xl mb-3"><List className="w-6 h-6 text-slate-400" /></div>
-                         <p className="text-[14px] text-slate-700 font-semibold mb-1">No recent activity</p>
-                         <p className="text-[13px] text-slate-500">Upload a file to see activity here.</p>
+                      <Button variant="outline" className="mt-4 w-full h-9 text-[12px] border-slate-200 text-slate-600 font-bold hover:bg-indigo-50 transition-colors">{t('lms_browse_catalog')}</Button>
+                  </div>
+
+                  {/* Recent Activity Mini-Feed */}
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col relative overflow-hidden group">
+                      <h3 className="text-[15px] font-bold text-slate-800 mb-5 flex items-center gap-2 tracking-tight"><Clock className="w-4 h-4 text-slate-400"/> {t('dash_completed_tasks')}</h3>
+                      <div className="flex-1 overflow-y-auto max-h-[220px] pr-2 scrollbar-thin scrollbar-thumb-slate-200">
+                         {recentActivity.length > 0 ? (
+                            <div className="space-y-4">
+                               {recentActivity.map((act, i) => (
+                                  <div key={act.id} className="flex items-center gap-4 group/item">
+                                     <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 group-hover/item:bg-indigo-50 flex items-center justify-center text-slate-500 group-hover/item:text-indigo-600 transition-colors shadow-sm">
+                                        {act.item_type === 'Document' ? <FileText className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
+                                     </div>
+                                     <div className="flex-1 min-w-0">
+                                        <p className="text-[13px] text-slate-700 truncate font-medium"><span className="font-semibold text-slate-900 group-hover/item:text-indigo-600 transition-colors">{t('assign_submitted')}</span> {act.title}</p>
+                                        <p className="text-[11px] text-slate-400 font-medium">{new Date(act.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                                     </div>
+                                  </div>
+                               ))}
+                            </div>
+                         ) : (
+                            <div className="flex flex-col items-center justify-center text-center py-8">
+                               <div className="p-4 bg-slate-50 rounded-2xl mb-3"><List className="w-6 h-6 text-slate-400" /></div>
+                               <p className="text-[14px] text-slate-700 font-semibold mb-1">{t('dash_no_courses')}</p>
+                            </div>
+                         )}
                       </div>
-                   )}
+                  </div>
                </div>
             </div>
          </div>
