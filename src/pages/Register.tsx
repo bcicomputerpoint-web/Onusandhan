@@ -4,12 +4,16 @@ import { signInWithPopup, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
 import { Button } from '../components/ui';
+import { CheckCircle } from 'lucide-react';
 
 export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [userType, setUserType] = useState('Research Scholar');
   const [error, setError] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [registeredRole, setRegisteredRole] = useState('');
   const navigate = useNavigate();
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -20,7 +24,7 @@ export default function Register() {
       
       const userRef = doc(db, 'users', result.user.uid);
       const isAdminEmail = email === 'bcicomputerpoint@gmail.com' || email === 'admin@onusandhan.com';
-      const role = isAdminEmail ? 'Admin' : 'Scholar';
+      const role = isAdminEmail ? 'Admin' : userType;
       
       await setDoc(userRef, {
          email: result.user.email,
@@ -28,10 +32,11 @@ export default function Register() {
          createdAt: Date.now()
       });
       await setDoc(doc(db, `users/${result.user.uid}/profile`, 'info'), {
-         full_name: name || (isAdminEmail ? 'System Administrator' : 'Anonymous Scholar')
+         full_name: name || (isAdminEmail ? 'System Administrator' : 'Anonymous User')
       });
       
-      navigate(role === 'Admin' ? '/admin' : '/dashboard');
+      setRegisteredRole(role);
+      setShowSuccess(true);
     } catch (err: any) {
       if (err.code === 'auth/operation-not-allowed') {
          setError('Email/password accounts are not enabled. Please enable them in the Firebase Console (Authentication > Sign-in method) or use Google.');
@@ -48,19 +53,19 @@ export default function Register() {
       
       const userRef = doc(db, 'users', result.user.uid);
       const userDoc = await getDoc(userRef);
-      let role = 'Scholar';
+      let role = userType;
       
       const isAdminEmail = result.user.email === 'bcicomputerpoint@gmail.com' || result.user.email === 'admin@onusandhan.com';
       
       if (!userDoc.exists()) {
-         role = isAdminEmail ? 'Admin' : 'Scholar';
+         role = isAdminEmail ? 'Admin' : userType;
          await setDoc(userRef, {
             email: result.user.email,
             role: role,
             createdAt: Date.now()
          });
          await setDoc(doc(db, `users/${result.user.uid}/profile`, 'info'), {
-            full_name: result.user.displayName || (isAdminEmail ? 'System Administrator' : 'Anonymous Scholar')
+            full_name: result.user.displayName || (isAdminEmail ? 'System Administrator' : 'Anonymous User')
          });
       } else {
          role = userDoc.data().role || 'Scholar';
@@ -70,7 +75,8 @@ export default function Register() {
          }
       }
       
-      navigate(role === 'Admin' ? '/admin' : '/dashboard');
+      setRegisteredRole(role);
+      setShowSuccess(true);
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/unauthorized-domain') {
@@ -122,6 +128,18 @@ export default function Register() {
             />
           </div>
           <div>
+            <label className="block text-[13px] font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">User Type</label>
+            <select
+              className="w-full text-[14px] rounded-lg border border-slate-300 px-3 py-2.5 bg-white outline-none shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all appearance-none cursor-pointer"
+              value={userType}
+              onChange={e => setUserType(e.target.value)}
+            >
+              <option value="Research Scholar">Research Scholar</option>
+              <option value="Student">Student</option>
+              <option value="Centre">Centre</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-[13px] font-semibold text-slate-600 mb-1.5 uppercase tracking-wider">Password</label>
             <input 
               type="password" 
@@ -161,6 +179,26 @@ export default function Register() {
           </div>
         </div>
       </div>
+
+      {showSuccess && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl ring-1 ring-slate-200 flex flex-col items-center text-center animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
+              <CheckCircle className="w-10 h-10 text-emerald-500" />
+            </div>
+            <h3 className="text-[24px] font-bold text-slate-800 mb-2">Registration Successful</h3>
+            <p className="text-slate-500 text-[15px] mb-8 leading-relaxed">
+              Your account as <span className="font-bold text-slate-700">{registeredRole}</span> has been created. You can now access your research dashboard.
+            </p>
+            <Button 
+              className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 transition-all hover:scale-[1.02] active:scale-95"
+              onClick={() => navigate(registeredRole === 'Admin' ? '/admin' : '/dashboard')}
+            >
+              Go to Dashboard
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

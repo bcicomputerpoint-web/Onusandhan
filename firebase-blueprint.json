@@ -6,7 +6,7 @@
       "type": "object",
       "properties": {
         "email": { "type": "string", "description": "The user's registered email address" },
-        "role": { "type": "string", "enum": ["Scholar", "Admin"], "description": "System role" },
+        "role": { "type": "string", "enum": ["Research Scholar", "Student", "Centre", "Scholar", "Admin"], "description": "System role" },
         "createdAt": { "type": "number", "description": "Timestamp of account creation" }
       },
       "required": ["email", "role", "createdAt"]

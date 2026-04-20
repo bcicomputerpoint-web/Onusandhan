@@ -25,7 +25,7 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['email', 'role', 'createdAt']) && data.keys().size() == 3
           && data.email is string && data.email.size() <= 128
-          && data.role in ['Scholar', 'Admin']
+          && data.role in ['Research Scholar', 'Student', 'Centre', 'Scholar', 'Admin']
           && data.createdAt is number;
     }
 
@@ -62,7 +62,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if isAdmin();
-      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && (incoming().role == 'Scholar' || incoming().email == 'bcicomputerpoint@gmail.com' || incoming().email == 'admin@onusandhan.com');
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming()) && (incoming().role in ['Research Scholar', 'Student', 'Centre', 'Scholar'] || incoming().email == 'bcicomputerpoint@gmail.com' || incoming().email == 'admin@onusandhan.com');
       allow update: if isValidId(userId) && (
          (isOwner(userId) && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['email']) && incoming().role == existing().role) ||
          isAdmin()
