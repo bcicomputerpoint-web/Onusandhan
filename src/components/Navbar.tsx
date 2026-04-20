@@ -2,6 +2,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth, useLanguage } from '../App';
 import { LogOut, User, LayoutDashboard, Settings, Globe } from 'lucide-react';
 import { Button } from './ui';
+import { db } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 export default function Navbar() {
   const { user, logout } = useAuth();

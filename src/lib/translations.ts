@@ -92,7 +92,12 @@ export const translations = {
   lbl_error: { en: "Academic access restricted", bn: "অ্যাক্সেস সীমাবদ্ধ" },
 
   // Common Header
-  onusandhan_logo: { en: "Onusandhan", bn: "অনুসন্ধান" }
+  onusandhan_logo: { en: "Onusandhan", bn: "অনুসন্ধান" },
+
+  // Hero Section
+  hero_audience: { en: "For Academic centre, Institution, Students, Research Scholars & Authors", bn: "একাডেমিক সেন্টার, প্রতিষ্ঠান, শিক্ষার্থী, গবেষক ও লেখকদের জন্য" },
+  hero_secure_academic: { en: "Secure Academic", bn: "নিরাপদ একাডেমিক" },
+  hero_platform: { en: "Platform for Documentation", bn: "ডকুমেন্টেশন প্ল্যাটফর্ম." }
 };
 
 export type TranslationKey = keyof typeof translations;

@@ -1,18 +1,26 @@
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui';
 import { Search, FolderOpen, ShieldCheck, GraduationCap } from 'lucide-react';
+import { useLanguage } from '../App';
 
 export default function Home() {
+  const { t, language } = useLanguage();
+  
   return (
     <div className="flex flex-col items-center justify-center pt-24 pb-16 px-4 sm:px-6 lg:px-8 text-center max-w-7xl mx-auto">
+      {language === 'en' && (
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 mb-6 max-w-4xl mx-auto leading-relaxed">
+          একাডেমিক সেন্টার, প্রতিষ্ঠান, শিক্ষার্থী, গবেষক ও লেখকদের জন্য নিরাপদ একাডেমিক ডকুমেন্টেশন প্ল্যাটফর্ম.
+        </h2>
+      )}
       <div className="inline-flex items-center rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-sm font-medium text-indigo-800 mb-8">
         <GraduationCap className="w-4 h-4 mr-2" />
-        For Research Scholars & Authors
+        {t('hero_audience')}
       </div>
       
       <h1 className="text-5xl font-extrabold tracking-tight text-slate-900 sm:text-6xl max-w-4xl">
-        Secure Academic Driving <br />
-        <span className="text-indigo-600">Platform For Research</span>
+        {t('hero_secure_academic')} <br />
+        <span className="text-indigo-600">{t('hero_platform')}</span>
       </h1>
       
       <p className="mt-6 text-xl text-slate-600 max-w-2xl mx-auto">
@@ -51,6 +59,10 @@ export default function Home() {
           <p className="text-slate-600">Easily search through documents and saved links including Google Scholar, ORCID, and Scopus profiles.</p>
         </div>
       </div>
+
+      <footer className="mt-24 pb-8 w-full text-center text-sm text-slate-500 border-t border-slate-200 pt-8">
+        Developed by Online Academy, Contact - <a href="mailto:bcicomputerpoint@gmail.com" className="hover:text-indigo-600 transition-colors">bcicomputerpoint@gmail.com</a>
+      </footer>
     </div>
   );
 }
