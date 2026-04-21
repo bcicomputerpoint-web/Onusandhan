@@ -86,10 +86,15 @@ export default function Dashboard() {
          const formData = new FormData();
          formData.append('file', file);
          
+         const controller = new AbortController();
+         const timeoutId = setTimeout(() => controller.abort(), 15000);
+
          const uploadRes = await fetch('/api/upload', {
            method: 'POST',
-           body: formData
+           body: formData,
+           signal: controller.signal
          });
+         clearTimeout(timeoutId);
          
          if (!uploadRes.ok) {
            const errData = await uploadRes.json();
@@ -109,12 +114,15 @@ export default function Dashboard() {
            visibility: 'Private'
          };
          
-         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData);
+         const addDocPromise = addDoc(collection(db, `users/${user.uid}/drive_items`), docData);
+         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase network sync timeout")), 10000));
+         const newDoc = await Promise.race([addDocPromise, timeoutPromise]) as any;
+
          setItems([{ id: newDoc.id, ...docData }, ...items]);
          handleCancelPreview();
       } catch (e: any) {
          console.error('Upload Error:', e);
-         alert(`Upload failed: ${e.message || 'Unknown error'}`);
+         alert(`Upload failed: ${e.name === 'AbortError' ? 'Server upload timed out' : (e.message || 'Unknown error')}`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
       }

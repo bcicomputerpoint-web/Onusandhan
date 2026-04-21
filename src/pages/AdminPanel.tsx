@@ -207,18 +207,22 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      // Use local Express backend for file upload to avoid Firebase Storage unprovisioned bucket issues
       const formData = new FormData();
       formData.append('file', file);
       
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+      
       const uploadRes = await fetch('/api/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       
       if (!uploadRes.ok) {
         const errData = await uploadRes.json();
-        throw new Error(errData.error || 'Failed to upload document');
+        throw new Error(errData.error || 'Failed to upload document to server');
       }
       
       const uploadData = await uploadRes.json();
@@ -234,13 +238,17 @@ export default function AdminPanel() {
         visibility: 'Private'
       };
       
-      await addDoc(collection(db, `users/${selectedUserId}/drive_items`), docData);
+      // Wrap addDoc in a timeout to prevent Firebase offline queueing from hanging the UI
+      const addDocPromise = addDoc(collection(db, `users/${selectedUserId}/drive_items`), docData);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase write timeout (Network issue)")), 10000));
+      await Promise.race([addDocPromise, timeoutPromise]);
+      
       setUploadState('success');
       await fetchStats();
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Admin Upload Error:', e);
-      alert(`Upload failed: ${e.message || 'Unknown error'}`);
+      alert(`Upload failed: ${e.name === 'AbortError' ? 'Server upload timed out' : (e.message || 'Unknown error')}`);
       setUploadState('error');
     }
     
