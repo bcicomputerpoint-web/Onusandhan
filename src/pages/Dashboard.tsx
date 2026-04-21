@@ -86,10 +86,41 @@ export default function Dashboard() {
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       try {
-         console.log("Starting Firebase Storage upload...");
-         const storageRef = ref(storage, `drive/${user.uid}/${Date.now()}-${file.name}`);
-         const uploadResult = await uploadBytes(storageRef, file);
-         const downloadUrl = await getDownloadURL(uploadResult.ref);
+         console.log("Initiating Server-Side Base64 Upload...");
+         
+         // Convert file to Base64
+         const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+               const result = reader.result as string;
+               resolve(result.split(',')[1]);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+         });
+
+         const controller = new AbortController();
+         const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+
+         const response = await fetch('/api/upload/base64', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               filename: file.name,
+               base64Data: base64Data
+            }),
+            signal: controller.signal
+         });
+         
+         clearTimeout(timeoutId);
+
+         if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Server returned ${response.status}: ${errText}`);
+         }
+
+         const uploadData = await response.json();
+         const downloadUrl = uploadData.url;
          
          const docData = {
            title: file.name,
@@ -101,19 +132,17 @@ export default function Dashboard() {
            visibility: 'Private'
          };
          
-         const addDocPromise = addDoc(collection(db, `users/${user.uid}/drive_items`), docData);
-         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database save timed out. Please check your internet.")), 15000));
-         const newDoc = await Promise.race([addDocPromise, timeoutPromise]) as any;
+         // Database save (usually very fast)
+         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
 
-         setItems([{ id: newDoc.id, ...docData }, ...items]);
+         setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
+         alert("Successfully uploaded to local server!");
       } catch (e: any) {
-         console.error('Upload Error:', e);
+         console.error('Final Upload Error:', e);
          let errMsg = e.message || 'Unknown error';
-         if (errMsg.includes('storage/unauthorized')) {
-            errMsg = "Storage Permission Denied. Please ensure you have deployed the latest security rules and try again.";
-         }
-         alert(`Upload failed: ${errMsg}`);
+         if (e.name === 'AbortError') errMsg = "Upload timed out (took too long). Try a smaller file.";
+         alert(`Submission failed: ${errMsg}`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
       }

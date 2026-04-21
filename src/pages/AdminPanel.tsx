@@ -213,9 +213,34 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      const storageRef = ref(storage, `drive/${selectedUserId}/${Date.now()}-${file.name}`);
-      const uploadResult = await uploadBytes(storageRef, file);
-      const downloadUrl = await getDownloadURL(uploadResult.ref);
+      console.log("Admin initiating Server-Side Base64 Upload...");
+      
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch('/api/upload/base64', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          base64Data: base64Data
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Server returned ${response.status}: ${errText}`);
+      }
+
+      const uploadData = await response.json();
+      const downloadUrl = uploadData.url;
       
       const docData = {
         title: file.name,
@@ -234,11 +259,7 @@ export default function AdminPanel() {
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Admin Upload Error:', e);
-      let errMsg = e.message || 'Unknown error';
-      if (errMsg.includes('storage/unauthorized')) {
-         errMsg = "Storage Permission Denied. Please ensure you have deployed the latest security rules and try again.";
-      }
-      alert(`Upload failed: ${errMsg}`);
+      alert(`Upload failed: ${e.message || 'Unknown error'}`);
       setUploadState('error');
     }
     

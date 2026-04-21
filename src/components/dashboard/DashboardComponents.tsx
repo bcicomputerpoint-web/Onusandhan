@@ -358,9 +358,25 @@ export function PreviewModal({ file, category, objectUrl, onConfirm, onCancel, i
         
         <div className="p-6 bg-slate-50 flex flex-col items-center justify-center relative min-h-[300px]">
           {isImage ? (
-             <img src={objectUrl} alt="Preview" className="max-w-full max-h-[300px] object-contain rounded-lg shadow-sm" />
+             <img 
+               src={objectUrl} 
+               alt="Preview" 
+               className="max-w-full max-h-[300px] object-contain rounded-lg shadow-sm" 
+               onError={(e) => {
+                 (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/broken/400/300';
+                 console.error("Preview image failed to load");
+               }}
+               referrerPolicy="no-referrer" 
+             />
           ) : isPDF ? (
-             <iframe src={`${objectUrl}#toolbar=0`} className="w-full h-[300px] border-none bg-white rounded-lg shadow-sm ring-1 ring-slate-200" title="PDF Preview" />
+             <div className="w-full h-full flex flex-col items-center">
+                <FileText className="w-16 h-16 text-indigo-400 mb-4 animate-bounce" />
+                <span className="text-slate-500 font-medium">Processing PDF document...</span>
+                <p className="text-[12px] text-slate-400 mt-2">Preview depends on browser PDF support</p>
+                <div className="mt-4 w-full h-[200px] border rounded-lg bg-white overflow-hidden shadow-inner">
+                   <iframe src={`${objectUrl}#toolbar=0`} className="w-full h-full border-none" title="PDF Preview" />
+                </div>
+             </div>
           ) : (
              <div className="flex flex-col items-center">
                 <div className="p-4 bg-indigo-50 rounded-2xl shadow-sm mb-4">

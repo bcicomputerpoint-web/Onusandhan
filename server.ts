@@ -60,6 +60,11 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'))); // statically serve files
 
+  // Diagnostic route
+  app.get('/api/ping', (req, res) => {
+    res.json({ status: 'live', timestamp: Date.now() });
+  });
+
   // Seed demo admin if not exists
   const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@onusandhan.com');
   if (!existingAdmin) {
