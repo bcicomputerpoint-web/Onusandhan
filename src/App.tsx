@@ -175,7 +175,7 @@ export default function App() {
     <AuthContext.Provider value={{ user, loading, logout, refreshAuth }}>
       <LanguageContext.Provider value={{ language, setLanguage, t }}>
         <Router>
-          <div className="min-h-screen bg-[#f4f7f9] font-sans text-slate-900">
+          <div className="min-h-screen bg-gradient-to-br from-white to-blue-50 font-sans text-slate-900">
             <Routes>
               <Route path="/" element={<><Navbar /><Home /></>} />
               <Route path="/privacy-policy" element={<><Navbar /><PrivacyPolicy /></>} />

@@ -149,7 +149,7 @@ export function DashboardLayout({ children, isAdmin = false }: { children: React
    const { user } = useAuth();
    
    return (
-     <div className="flex h-screen overflow-hidden bg-[#f4f7f9] font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
+     <div className="flex h-screen overflow-hidden bg-gradient-to-br from-white to-blue-50 font-sans text-slate-800 selection:bg-indigo-100 selection:text-indigo-900">
         <Sidebar isAdmin={isAdmin} isOpen={sidebarOpen} setOpen={setSidebarOpen} />
         <div className="flex-1 flex flex-col relative min-w-0 overflow-hidden">
            <TopNav 
@@ -158,7 +158,7 @@ export function DashboardLayout({ children, isAdmin = false }: { children: React
               userName={user?.full_name || (isAdmin ? 'Administrator' : 'My Account')}
               photoUrl={user?.photo_url}
            />
-           <main className="flex-1 overflow-y-auto w-full bg-[#f4f7f9]">
+           <main className="flex-1 overflow-y-auto w-full bg-transparent">
              <div className="p-6 md:p-8 lg:p-10 max-w-[1600px] mx-auto w-full min-h-full">
                 {children}
              </div>

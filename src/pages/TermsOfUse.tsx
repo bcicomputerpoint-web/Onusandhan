@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 export default function TermsOfUse() {
   return (
-    <div className="min-h-screen bg-[#f4f7f9] pt-24 pb-16 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-transparent pt-24 pb-16 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto bg-white p-8 md:p-12 rounded-2xl shadow-sm border border-slate-200">
         <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-4">Terms of Use for Onusandhan.in</h1>
         <p className="text-slate-500 mb-8 italic">Last Updated: April 21, 2026</p>

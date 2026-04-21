@@ -83,7 +83,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-[#f4f7f9] overflow-hidden">
+    <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-transparent overflow-hidden">
       {/* Informational Left Pane for Desktop */}
       <div className="hidden lg:flex flex-1 bg-slate-900 items-center justify-center relative p-12 overflow-hidden">
          {/* Background Decor */}
