@@ -213,30 +213,19 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin initiating Server-Side Base64 Upload...");
+      console.log("Admin initiating Multi-part Form Upload...");
       
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+      const formData = new FormData();
+      formData.append('file', file);
 
-      const response = await fetch('/api/upload/base64', {
+      const response = await fetch('/api/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          base64Data: base64Data
-        })
+        body: formData
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Server returned ${response.status}: ${errText}`);
+        const errData = await response.json().catch(() => ({ error: 'Server error' }));
+        throw new Error(errData.error || `Upload failed with status ${response.status}`);
       }
 
       const uploadData = await response.json();

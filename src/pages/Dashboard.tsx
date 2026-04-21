@@ -86,42 +86,23 @@ export default function Dashboard() {
       
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
-      setUploadStatus('Processing file...');
+      setUploadStatus('Preparing upload...');
       
       try {
-         console.log("Initiating Server-Side Base64 Upload...");
+         console.log("Initiating Multi-part Form Upload...");
          
-         // Step 1: Base64 Conversion
-         const base64Data = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-               const result = reader.result as string;
-               resolve(result.split(',')[1]);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-         });
+         const formData = new FormData();
+         formData.append('file', file);
 
-         // Step 2: Server Request
-         setUploadStatus('Sending to server...');
-         const controller = new AbortController();
-         const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
-
-         const response = await fetch('/api/upload/base64', {
+         setUploadStatus('Connecting to server...');
+         const response = await fetch('/api/upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-               filename: file.name,
-               base64Data: base64Data
-            }),
-            signal: controller.signal
+            body: formData
          });
-         
-         clearTimeout(timeoutId);
 
          if (!response.ok) {
-            const errText = await response.text();
-            throw new Error(`Server returned ${response.status}: ${errText}`);
+            const errData = await response.json().catch(() => ({ error: 'Server error' }));
+            throw new Error(errData.error || `Upload failed with status ${response.status}`);
          }
 
          const uploadData = await response.json();
@@ -144,16 +125,14 @@ export default function Dashboard() {
 
          setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
-         alert("Successfully uploaded and saved!");
+         alert("Success! File uploaded and saved.");
       } catch (e: any) {
          console.error('Final Upload Error Context:', e);
-         let errMsg = e.message || 'Unknown error';
-         if (e.name === 'AbortError') errMsg = "Upload timed out (server took too long).";
-         alert(`Submission failed: ${errMsg}\n\nTechnical Tip: Ensure 'onusandhan.in' is in Firebase Authorized Domains.`);
+         alert(`Submission failed: ${e.message}\n\nTip: Try a smaller file or check your connection.`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
          setUploadStatus('');
-       }
+      }
    };
 
    const handleLinkSubmit = async (data: any) => {
