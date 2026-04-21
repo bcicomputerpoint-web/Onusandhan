@@ -213,58 +213,46 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin: Trying Direct Storage Upload...");
+      console.log("Admin: Executing High-Performance Raw Upload...");
       
-      const storageRef = ref(storage, `users/${selectedUserId}/${Date.now()}-${file.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      const downloadUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload/raw', true);
+        
+        // Pass filename in header to keep the body purely binary
+        xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+        
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            console.log(`Raw upload progress: ${progress}%`);
+          }
+        };
 
-      let downloadUrl = '';
-      try {
-        // Wait for upload with a 15-second "start" timeout
-        downloadUrl = await new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            uploadTask.cancel();
-            reject(new Error('DIRECT_UPLOAD_TIMEOUT'));
-          }, 15000);
-
-          uploadTask.on('state_changed', 
-            (snapshot) => {
-              // If we see any progress, clear the start timeout
-              if (snapshot.bytesTransferred > 0) clearTimeout(timeout);
-            }, 
-            reject, 
-            async () => {
-              clearTimeout(timeout);
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(url);
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const res = JSON.parse(xhr.responseText);
+              resolve(res.url);
+            } catch (e) {
+              reject(new Error("Invalid response from server"));
             }
-          );
-        });
-      } catch (storageErr: any) {
-        if (storageErr.message === 'DIRECT_UPLOAD_TIMEOUT' || storageErr.code === 'storage/retry-limit-exceeded' || storageErr.code === 'storage/unknown') {
-          console.warn("Direct upload failed or blocked by CORS. Falling back to Base64 Tunnel...");
-          
-          // FALLBACK: Base64 Tunnel (Works on all domains/proxies)
-          const base64Data = await new Promise<string>((r) => {
-            const reader = new FileReader();
-            reader.onload = () => r((reader.result as string).split(',')[1]);
-            reader.readAsDataURL(file);
-          });
+          } else {
+            reject(new Error(`Server rejected with status ${xhr.status}`));
+          }
+        };
 
-          const response = await fetch('/api/upload/base64', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: file.name, base64Data })
-          });
+        xhr.onerror = () => reject(new Error("Network connection lost or blocked."));
+        xhr.ontimeout = () => reject(new Error("Connection timed out. Check internet speed."));
+        
+        // 60-second timeout for large academic files
+        xhr.timeout = 60000;
+        
+        // Send pure binary data
+        xhr.send(file);
+      });
 
-          if (!response.ok) throw new Error("Fallback upload failed as well.");
-          const data = await response.json();
-          downloadUrl = data.url;
-        } else {
-          throw storageErr;
-        }
-      }
-      
+      console.log("Upload complete, saving to database...");
       const docData = {
         title: file.name,
         item_type: 'Document',
@@ -282,7 +270,7 @@ export default function AdminPanel() {
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Final Admin Upload Error:', e);
-      alert(`Upload Failed: ${e.message}`);
+      alert(`Upload Failed: ${e.message}\n\nTip: If the problem continues, try a smaller file or a different browser.`);
       setUploadState('error');
     }
     

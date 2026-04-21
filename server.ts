@@ -221,6 +221,40 @@ async function startServer() {
     }
   });
 
+  // RAW BINARY UPLOAD (v2) - Most robust method for firewalls/proxies
+  app.post('/api/upload/raw', async (req: any, res: any) => {
+    console.log('--- Raw binary upload incoming ---');
+    try {
+      const filename = req.headers['x-filename'] || `file-${Date.now()}.bin`;
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(filename);
+      const finalFilename = 'raw-' + uniqueSuffix + ext;
+      const fullPath = path.join(uploadDir, finalFilename);
+
+      const writeStream = fs.createWriteStream(fullPath);
+      
+      req.pipe(writeStream);
+
+      req.on('error', (e: any) => {
+        console.error('Inbound stream error:', e);
+        res.status(500).json({ error: 'Stream error' });
+      });
+
+      writeStream.on('finish', () => {
+        console.log('Raw upload complete:', finalFilename);
+        res.json({ url: `/files/${finalFilename}` });
+      });
+
+      writeStream.on('error', (e) => {
+        console.error('Write stream error:', e);
+        res.status(500).json({ error: 'File system error' });
+      });
+    } catch (error) {
+      console.error('Raw upload handler error:', error);
+      res.status(500).json({ error: 'Internal handler failure' });
+    }
+  });
+
   // Improved upload endpoint with logging
   app.post('/api/process/doc', (req: any, res: any) => {
     console.log('--- Incoming File Upload ---');

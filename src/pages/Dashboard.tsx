@@ -89,54 +89,38 @@ export default function Dashboard() {
       setUploadStatus('0%');
       
       try {
-         console.log("Initiating Direct Firebase Storage Upload...");
+         console.log("Dashboard: Executing High-Performance Raw Upload...");
          
-         const storageRef = ref(storage, `users/${user.uid}/${Date.now()}-${file.name}`);
-         const uploadTask = uploadBytesResumable(storageRef, file);
-
-         let downloadUrl = '';
-         try {
-            // 15-second heartbeat timeout
-            downloadUrl = await new Promise<string>((resolve, reject) => {
-               const timeout = setTimeout(() => {
-                  uploadTask.cancel();
-                  reject(new Error('TIMEOUT'));
-               }, 15000);
-
-               uploadTask.on('state_changed', 
-                  (snapshot) => {
-                     const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                     setUploadStatus(`Uploading: ${progress}%`);
-                     if (snapshot.bytesTransferred > 0) clearTimeout(timeout);
-                  }, 
-                  reject, 
-                  async () => {
-                     clearTimeout(timeout);
-                     const url = await getDownloadURL(uploadTask.snapshot.ref);
-                     resolve(url);
-                  }
-               );
-            });
-         } catch (storageErr: any) {
-            console.warn("Direct upload blocked/stuck. Falling back to platform tunnel...");
-            setUploadStatus('Using stable tunnel...');
+         const downloadUrl = await new Promise<string>((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload/raw', true);
+            xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
             
-            const base64Data = await new Promise<string>((r) => {
-               const reader = new FileReader();
-               reader.onload = () => r((reader.result as string).split(',')[1]);
-               reader.readAsDataURL(file);
-            });
+            xhr.upload.onprogress = (event) => {
+               if (event.lengthComputable) {
+                  const progress = Math.round((event.loaded / event.total) * 100);
+                  setUploadStatus(`Uploading: ${progress}%`);
+               }
+            };
 
-            const response = await fetch('/api/upload/base64', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ filename: file.name, base64Data })
-            });
+            xhr.onload = () => {
+               if (xhr.status >= 200 && xhr.status < 300) {
+                  try {
+                     const res = JSON.parse(xhr.responseText);
+                     resolve(res.url);
+                  } catch (e) {
+                     reject(new Error("Server response malformed"));
+                  }
+               } else {
+                  reject(new Error(`Server error (${xhr.status})`));
+               }
+            };
 
-            if (!response.ok) throw new Error("Connection lost. Please try a smaller file.");
-            const data = await response.json();
-            downloadUrl = data.url;
-         }
+            xhr.onerror = () => reject(new Error("Connection blocked by network/firewall"));
+            xhr.ontimeout = () => reject(new Error("Request timed out"));
+            xhr.timeout = 60000;
+            xhr.send(file);
+         });
 
          setUploadStatus('Saving record...');
          const docData = {
@@ -153,12 +137,10 @@ export default function Dashboard() {
 
          setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
-         alert("Success! File securely uploaded.");
+         alert("Success! File uploaded successfully.");
       } catch (e: any) {
-         console.error('Final Upload Error:', e);
-         let detail = e.message || 'Unknown error';
-         if (e.code === 'storage/unauthorized') detail = "Permission Denied: Firebase Storage rules are blocking this upload.";
-         alert(`Submission failed: ${detail}`);
+         console.error('Final Dashboard Upload Error:', e);
+         alert(`Upload Failed: ${e.message}\n\nNote: If file is very large, try a smaller document.`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
          setUploadStatus('');
