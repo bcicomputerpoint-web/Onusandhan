@@ -78,9 +78,12 @@ export default function BookingModal({ isOpen, onClose }: BookingModalProps) {
               <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-6 shadow-sm">
                 <CheckCircle className="w-10 h-10" />
               </div>
-              <h4 className="text-2xl font-extrabold text-slate-800 mb-3 tracking-tight">Query Received!</h4>
-              <p className="text-slate-600 max-w-sm mb-8 text-[15px] leading-relaxed">
+              <h4 className="text-2xl font-extrabold text-slate-800 mb-3 tracking-tight">Submission Successful</h4>
+              <p className="text-slate-600 max-w-sm mb-3 text-[15px] leading-relaxed">
                 Thank you for booking a session. Our team will contact you shortly.
+              </p>
+              <p className="text-slate-700 max-w-sm mb-8 text-[15px] font-semibold">
+                Feel Free to call: +91 9002903128 / +91 8942001998
               </p>
               
               <a 

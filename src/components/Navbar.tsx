@@ -33,7 +33,10 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity">
-              <img src="/logo.png" alt="Onusandhan" className="w-8 h-8 object-cover rounded-lg" />
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-to-tr from-indigo-700 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-200/50">
+                 <BookOpen className="w-5 h-5 md:w-6 md:h-6 absolute opacity-30 mt-2" />
+                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="z-10 relative"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+              </div>
               <span className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
                 Onusandhan
               </span>

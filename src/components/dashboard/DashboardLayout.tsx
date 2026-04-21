@@ -41,7 +41,10 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
         <aside className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-white border-r border-slate-200 transform transition-transform duration-300 lg:translate-x-0 lg:static flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
            <div className="h-[72px] flex items-center px-6 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                 <img src="/logo.png" alt="Onusandhan" className="w-8 h-8 object-cover rounded-lg shadow-sm" />
+                 <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-700 to-blue-500 flex items-center justify-center text-white shadow-md shadow-indigo-200/50 relative overflow-hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="z-10 relative mb-1"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute opacity-20 mt-3"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                 </div>
                  <span className="text-[18px] font-bold text-slate-800 tracking-tight">{t('onusandhan_logo')}</span>
               </div>
            </div>
