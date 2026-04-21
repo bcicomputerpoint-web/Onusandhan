@@ -31,6 +31,25 @@ service cloud.firestore {
     }
 
     // ----------------------------------------------------
+    // BOOKING QUERIES COLLECTION
+    // ----------------------------------------------------
+    match /booking_queries/{queryId} {
+      function isValidBookingQuery(data) {
+        return data.keys().hasAll(['name', 'contact_number', 'email', 'user_type', 'query_text', 'status', 'created_at'])
+          && data.name is string && data.name.size() <= 100
+          && data.contact_number is string && data.contact_number.size() <= 20
+          && data.email is string && data.email.size() <= 100
+          && data.user_type in ['Student', 'Academic centre', 'Research Scholar', 'OTHER']
+          && data.query_text is string && data.query_text.size() <= 2000
+          && data.status in ['Pending', 'Contacted', 'Resolved']
+          && data.created_at is number;
+      }
+      
+      allow create: if isValidId(queryId) && isValidBookingQuery(incoming());
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ----------------------------------------------------
     // USERS COLLECTION
     // ----------------------------------------------------
     match /users/{userId} {

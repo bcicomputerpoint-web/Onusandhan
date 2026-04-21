@@ -31,9 +31,11 @@ export default function AdminPanel() {
     try {
       const usersQuery = await getDocs(collection(db, 'users'));
       const itemsQuery = await getDocs(collectionGroup(db, 'drive_items'));
+      const bookingsQuery = await getDocs(collection(db, 'booking_queries'));
       
       const users = usersQuery.docs.map(d => ({ id: d.id, ...d.data() }));
       const items = itemsQuery.docs.map(d => ({ id: d.id, ...d.data(), parentPath: d.ref.parent.parent?.path }));
+      const bookingsList = bookingsQuery.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Fetch profiles for users to show actual names instead of email
       const recentUsers = await Promise.all(users.map(async (u: any) => {
@@ -57,8 +59,11 @@ export default function AdminPanel() {
         totalDocs: items.filter((i: any) => i.item_type === 'Document').length,
         totalLinks: items.filter((i: any) => i.item_type === 'Link').length,
         totalAdmins: users.filter((u: any) => u.role === 'Admin').length,
+        totalBookings: bookingsList.length,
+        pendingBookings: bookingsList.filter((b: any) => b.status === 'Pending').length,
         recentUsers: recentUsers.sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 10),
-        recentItems: items.sort((a: any, b: any) => b.created_at - a.created_at).slice(0, 50)
+        recentItems: items.sort((a: any, b: any) => b.created_at - a.created_at).slice(0, 50),
+        bookings: bookingsList.sort((a: any, b: any) => b.created_at - a.created_at)
       });
     } catch (err) {
       console.error('Failed to fetch admin stats', err);
@@ -273,6 +278,42 @@ export default function AdminPanel() {
     }
   };
 
+  const updateBookingStatus = async (id: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'booking_queries', id), { status: newStatus });
+      fetchStats();
+    } catch (e) {
+      console.error('Network Error updating booking status', e);
+    }
+  };
+
+  const bookingCols = [
+    { header: 'Date', cell: (r: any) => <span className="text-slate-500 text-[12px] whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</span> },
+    { header: 'Details', cell: (r: any) => (
+      <div>
+         <p className="font-bold text-slate-800 text-[14px]">{r.name}</p>
+         <p className="text-slate-500 text-[12px]">{r.email} • {r.contact_number}</p>
+         <span className="inline-block mt-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{r.user_type}</span>
+      </div>
+    ) },
+    { header: 'Query', cell: (r: any) => <p className="text-[13px] text-slate-600 max-w-sm whitespace-pre-wrap">{r.query_text}</p> },
+    { header: 'Status', cell: (r: any) => (
+      <select 
+        value={r.status}
+        onChange={(e) => updateBookingStatus(r.id, e.target.value)}
+        className={`text-[12px] font-bold outline-none cursor-pointer rounded-lg px-2 py-1 border transition-colors ${
+          r.status === 'Pending' ? 'bg-amber-50 text-amber-700 border-amber-200 focus:ring-amber-500' :
+          r.status === 'Contacted' ? 'bg-blue-50 text-blue-700 border-blue-200 focus:ring-blue-500' :
+          'bg-emerald-50 text-emerald-700 border-emerald-200 focus:ring-emerald-500'
+        }`}
+      >
+        <option value="Pending">Pending</option>
+        <option value="Contacted">Contacted</option>
+        <option value="Resolved">Resolved</option>
+      </select>
+    ) }
+  ];
+
   const userCols = [
     { header: 'ID', accessor: 'id', cell: (r:any) => <span className="font-mono text-[12px] text-slate-400">#{r.id}</span> },
     { header: 'Name', accessor: 'full_name', cell: (r:any) => <span className="font-semibold text-slate-800 tracking-tight">{r.full_name || 'N/A'}</span> },
@@ -400,7 +441,7 @@ export default function AdminPanel() {
                      <SummaryCard title="Total Users" value={stats?.totalUsers || 0} icon={Users} status="active" />
                      <SummaryCard title="Total Admins" value={stats?.totalAdmins || 0} icon={Shield} />
                      <SummaryCard title="Uploaded Docs" value={stats?.totalDocs || 0} icon={FileText} status={stats?.totalDocs > 0 ? "active" : "idle"} />
-                     <SummaryCard title="Links Added" value={stats?.totalLinks || 0} icon={Activity} />
+                     <SummaryCard title="Active Queries" value={stats?.pendingBookings || 0} icon={Activity} status={stats?.pendingBookings > 0 ? "error" : "active"} />
                   </div>
                   
                   {/* Quick Distribution Chart (SVG) */}
@@ -508,6 +549,13 @@ export default function AdminPanel() {
          </div>
 
          {/* Tables Section */}
+         <div className="pt-8">
+            <div className="mb-4">
+               <h2 className="text-[18px] font-bold text-slate-800 tracking-tight">Recent Booking Queries</h2>
+            </div>
+            <DataTable columns={bookingCols} data={stats?.bookings || []} />
+         </div>
+
          <div className="pt-8">
             <div className="mb-4">
                <h2 className="text-[18px] font-bold text-slate-800 tracking-tight">Recent Registrations</h2>

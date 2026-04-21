@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/ui';
-import { Search, FolderOpen, ShieldCheck, GraduationCap } from 'lucide-react';
+import { Search, FolderOpen, ShieldCheck, GraduationCap, CalendarDays } from 'lucide-react';
 import { useLanguage } from '../App';
+import BookingModal from '../components/BookingModal';
 
 export default function Home() {
   const { t, language } = useLanguage();
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
   
   return (
     <div className="flex flex-col items-center justify-center pt-24 pb-16 px-4 sm:px-6 lg:px-8 text-center max-w-7xl mx-auto">
@@ -27,7 +30,14 @@ export default function Home() {
         Onusandhan provides a personalized private drive to securely upload, organize, search, and manage your academic documents, publications, and resource links.
       </p>
       
-      <div className="mt-10 flex gap-4 justify-center">
+      <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center items-center">
+        <Button 
+          variant="primary" 
+          className="h-12 px-8 text-base bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200 border-none flex items-center gap-2"
+          onClick={() => setIsBookingOpen(true)}
+        >
+          <CalendarDays className="w-5 h-5" /> Book a Session
+        </Button>
         <Link to="/register">
           <Button variant="primary" className="h-12 px-8 text-base">Get Started Free</Button>
         </Link>
@@ -67,6 +77,8 @@ export default function Home() {
         <span className="text-slate-300">|</span>
         <Link to="/terms-of-use" className="hover:text-indigo-600 transition-colors font-medium">Terms of Use</Link>
       </footer>
+      
+      <BookingModal isOpen={isBookingOpen} onClose={() => setIsBookingOpen(false)} />
     </div>
   );
 }

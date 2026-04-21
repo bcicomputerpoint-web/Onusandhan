@@ -41,9 +41,7 @@ export const Sidebar = ({ isAdmin, isOpen, setOpen }: { isAdmin: boolean, isOpen
         <aside className={`fixed inset-y-0 left-0 z-50 w-[260px] bg-white border-r border-slate-200 transform transition-transform duration-300 lg:translate-x-0 lg:static flex flex-col ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
            <div className="h-[72px] flex items-center px-6 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                 <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-200">
-                    <span className="text-white font-bold text-lg leading-none">O</span>
-                 </div>
+                 <img src="/logo.png" alt="Onusandhan" className="w-8 h-8 object-cover rounded-lg shadow-sm" />
                  <span className="text-[18px] font-bold text-slate-800 tracking-tight">{t('onusandhan_logo')}</span>
               </div>
            </div>
