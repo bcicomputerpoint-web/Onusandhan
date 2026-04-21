@@ -4,7 +4,7 @@ import { useAuth, useLanguage } from '../App';
 import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal, ProfileStrengthTracker } from '../components/dashboard/DashboardComponents';
 import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode, BookOpen } from 'lucide-react';
 import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { Button } from '../components/ui';
 
@@ -86,67 +86,54 @@ export default function Dashboard() {
       
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
-      setUploadStatus('Preparing upload...');
+      setUploadStatus('0%');
       
-       try {
-          console.log("Initiating Multi-part Form Upload...");
-          
-          const formData = new FormData();
-          formData.append('file', file);
+      try {
+         console.log("Initiating Direct Firebase Storage Upload...");
+         
+         const storageRef = ref(storage, `users/${user.uid}/${Date.now()}-${file.name}`);
+         const uploadTask = uploadBytesResumable(storageRef, file);
 
-          // Use the more standard relative path without absolute host
-          const uploadPath = '/api/process/doc';
-          console.log("Submitting to:", uploadPath);
+         await new Promise<void>((resolve, reject) => {
+            uploadTask.on('state_changed', 
+               (snapshot) => {
+                  const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                  setUploadStatus(`Uploading: ${progress}%`);
+               }, 
+               reject, 
+               () => resolve()
+            );
+         });
 
-          setUploadStatus('Connecting to server...');
-          const response = await fetch(uploadPath, {
-             method: 'POST',
-             body: formData,
-             // Removed all manual headers to let the browser handle boundary correctly
-          });
+         setUploadStatus('Processing...');
+         const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+         
+         setUploadStatus('Saving record...');
+         const docData = {
+           title: file.name,
+           item_type: 'Document',
+           category,
+           file_path: downloadUrl,
+           user_id: user.uid,
+           created_at: Date.now(),
+           visibility: 'Private'
+         };
+         
+         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
 
-          if (!response.ok) {
-             let errorMsg = `Server returned ${response.status}`;
-             try {
-                const errData = await response.json();
-                errorMsg = errData.error || errorMsg;
-             } catch (e) {}
-             throw new Error(errorMsg);
-          }
-
-          const uploadData = await response.json();
-          const downloadUrl = uploadData.url;
-          
-          // Step 3: Database Sync
-          setUploadStatus('Saving record...');
-          const docData = {
-            title: file.name,
-            item_type: 'Document',
-            category,
-            file_path: downloadUrl,
-            user_id: user.uid,
-            created_at: Date.now(),
-            visibility: 'Private'
-          };
-          
-          // Database save (usually very fast)
-          const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
-
-          setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
-          handleCancelPreview();
-          alert("Success! File uploaded and record saved.");
-       } catch (e: any) {
-          console.error('Final Upload Error Context:', e);
-          let detail = e.message;
-          if (detail === 'Failed to fetch') {
-             detail = "Network error: Connection blocked by firewall, VPN, or browser extension. Try incognito mode or a different internet connection.";
-          }
-          alert(`Submission failed: ${detail}`);
-       } finally {
-          setUploadingState(prev => ({ ...prev, [category]: false }));
-          setUploadStatus('');
-       }
-    };
+         setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
+         handleCancelPreview();
+         alert("Success! File securely uploaded.");
+      } catch (e: any) {
+         console.error('Final Upload Error:', e);
+         let detail = e.message || 'Unknown error';
+         if (e.code === 'storage/unauthorized') detail = "Permission Denied: Firebase Storage rules are blocking this upload.";
+         alert(`Submission failed: ${detail}`);
+      } finally {
+         setUploadingState(prev => ({ ...prev, [category]: false }));
+         setUploadStatus('');
+      }
+   };
 
    const handleLinkSubmit = async (data: any) => {
      if (!user?.uid) return;

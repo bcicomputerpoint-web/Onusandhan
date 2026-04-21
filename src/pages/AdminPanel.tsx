@@ -5,7 +5,7 @@ import { Users, FileText, CheckCircle, UserPlus, Shield, Activity, Eye, Check, X
 import { Button } from '../components/ui';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, collectionGroup, updateDoc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
 
 export default function AdminPanel() {
@@ -213,29 +213,16 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin initiating Multi-part Form Upload...");
+      console.log("Admin initiating Direct Firebase Storage Upload...");
       
-      const formData = new FormData();
-      formData.append('file', file);
+      const storageRef = ref(storage, `users/${selectedUserId}/${Date.now()}-${file.name}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
 
-      // Use the new endpoint
-      const response = await fetch('/api/process/doc', {
-        method: 'POST',
-        body: formData,
-        // No manual headers
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on('state_changed', null, reject, () => resolve());
       });
 
-      if (!response.ok) {
-        let errorMsg = `Server error ${response.status}`;
-        try {
-          const errData = await response.json();
-          errorMsg = errData.error || errorMsg;
-        } catch (e) {}
-        throw new Error(errorMsg);
-      }
-
-      const uploadData = await response.json();
-      const downloadUrl = uploadData.url;
+      const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
       
       const docData = {
         title: file.name,
@@ -255,9 +242,7 @@ export default function AdminPanel() {
     } catch (e: any) {
       console.error('Admin Upload Error:', e);
       let errMsg = e.message || 'Unknown error';
-      if (errMsg === 'Failed to fetch') {
-        errMsg = "Network Error: Request blocked by browser or connection dropped.";
-      }
+      if (e.code === 'storage/unauthorized') errMsg = "Permission Denied: Firebase Storage rules need adjustment.";
       alert(`Upload failed: ${errMsg}`);
       setUploadState('error');
     }
