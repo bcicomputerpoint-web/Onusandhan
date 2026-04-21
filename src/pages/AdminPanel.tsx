@@ -234,7 +234,11 @@ export default function AdminPanel() {
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Admin Upload Error:', e);
-      alert(`Upload failed: ${e.message || 'Unknown error'}`);
+      let errMsg = e.message || 'Unknown error';
+      if (errMsg.includes('storage/unauthorized')) {
+         errMsg = "Storage Permission Denied. Please ensure you have deployed the latest security rules and try again.";
+      }
+      alert(`Upload failed: ${errMsg}`);
       setUploadState('error');
     }
     

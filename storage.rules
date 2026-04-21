@@ -1,0 +1,15 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /drive/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Allow admins to read/write all
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null && (
+        request.auth.token.email == 'bcicomputerpoint@gmail.com' ||
+        request.auth.token.email == 'admin@onusandhan.com'
+      );
+    }
+  }
+}

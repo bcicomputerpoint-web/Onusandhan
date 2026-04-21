@@ -86,6 +86,7 @@ export default function Dashboard() {
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       try {
+         console.log("Starting Firebase Storage upload...");
          const storageRef = ref(storage, `drive/${user.uid}/${Date.now()}-${file.name}`);
          const uploadResult = await uploadBytes(storageRef, file);
          const downloadUrl = await getDownloadURL(uploadResult.ref);
@@ -101,14 +102,18 @@ export default function Dashboard() {
          };
          
          const addDocPromise = addDoc(collection(db, `users/${user.uid}/drive_items`), docData);
-         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase network sync timeout")), 10000));
+         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Database save timed out. Please check your internet.")), 15000));
          const newDoc = await Promise.race([addDocPromise, timeoutPromise]) as any;
 
          setItems([{ id: newDoc.id, ...docData }, ...items]);
          handleCancelPreview();
       } catch (e: any) {
          console.error('Upload Error:', e);
-         alert(`Upload failed: ${e.name === 'AbortError' ? 'Server upload timed out' : (e.message || 'Unknown error')}`);
+         let errMsg = e.message || 'Unknown error';
+         if (errMsg.includes('storage/unauthorized')) {
+            errMsg = "Storage Permission Denied. Please ensure you have deployed the latest security rules and try again.";
+         }
+         alert(`Upload failed: ${errMsg}`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
       }
