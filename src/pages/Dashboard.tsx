@@ -94,14 +94,20 @@ export default function Dashboard() {
          const formData = new FormData();
          formData.append('file', file);
 
+         const uploadUrl = `${window.location.origin}/api/upload`;
+         console.log("Fetching from:", uploadUrl);
+
          setUploadStatus('Connecting to server...');
-         const response = await fetch('/api/upload', {
+         const response = await fetch(uploadUrl, {
             method: 'POST',
-            body: formData
+            body: formData,
+            headers: {
+               'Accept': 'application/json'
+            }
          });
 
          if (!response.ok) {
-            const errData = await response.json().catch(() => ({ error: 'Server error' }));
+            const errData = await response.json().catch(() => ({ error: 'Local server error' }));
             throw new Error(errData.error || `Upload failed with status ${response.status}`);
          }
 
@@ -128,7 +134,11 @@ export default function Dashboard() {
          alert("Success! File uploaded and saved.");
       } catch (e: any) {
          console.error('Final Upload Error Context:', e);
-         alert(`Submission failed: ${e.message}\n\nTip: Try a smaller file or check your connection.`);
+         let customMsg = e.message;
+         if (customMsg === 'Failed to fetch') {
+            customMsg = "Network Error (Failed to fetch). This usually means the browser blocked the request or the server is down. Check your console logs.";
+         }
+         alert(`Submission failed: ${customMsg}\n\nHost: ${window.location.host}`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
          setUploadStatus('');

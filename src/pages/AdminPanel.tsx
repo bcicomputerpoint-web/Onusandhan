@@ -218,13 +218,19 @@ export default function AdminPanel() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('/api/upload', {
+      const apiUrl = `${window.location.origin}/api/upload`;
+      console.log("Admin fetching from:", apiUrl);
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+          'Accept': 'application/json'
+        }
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: 'Server error' }));
+        const errData = await response.json().catch(() => ({ error: 'Local server error' }));
         throw new Error(errData.error || `Upload failed with status ${response.status}`);
       }
 
@@ -248,7 +254,11 @@ export default function AdminPanel() {
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Admin Upload Error:', e);
-      alert(`Upload failed: ${e.message || 'Unknown error'}`);
+      let errMsg = e.message || 'Unknown error';
+      if (errMsg === 'Failed to fetch') {
+        errMsg = "Network Error: Browser blocked the request or server is unreachable. Check console logs.";
+      }
+      alert(`Upload failed: ${errMsg}\n\nHost: ${window.location.host}`);
       setUploadState('error');
     }
     
