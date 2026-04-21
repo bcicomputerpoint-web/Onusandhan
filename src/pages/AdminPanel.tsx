@@ -213,16 +213,57 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin initiating Direct Firebase Storage Upload...");
+      console.log("Admin: Trying Direct Storage Upload...");
       
       const storageRef = ref(storage, `users/${selectedUserId}/${Date.now()}-${file.name}`);
       const uploadTask = uploadBytesResumable(storageRef, file);
 
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on('state_changed', null, reject, () => resolve());
-      });
+      let downloadUrl = '';
+      try {
+        // Wait for upload with a 15-second "start" timeout
+        downloadUrl = await new Promise<string>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            uploadTask.cancel();
+            reject(new Error('DIRECT_UPLOAD_TIMEOUT'));
+          }, 15000);
 
-      const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              // If we see any progress, clear the start timeout
+              if (snapshot.bytesTransferred > 0) clearTimeout(timeout);
+            }, 
+            reject, 
+            async () => {
+              clearTimeout(timeout);
+              const url = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(url);
+            }
+          );
+        });
+      } catch (storageErr: any) {
+        if (storageErr.message === 'DIRECT_UPLOAD_TIMEOUT' || storageErr.code === 'storage/retry-limit-exceeded' || storageErr.code === 'storage/unknown') {
+          console.warn("Direct upload failed or blocked by CORS. Falling back to Base64 Tunnel...");
+          
+          // FALLBACK: Base64 Tunnel (Works on all domains/proxies)
+          const base64Data = await new Promise<string>((r) => {
+            const reader = new FileReader();
+            reader.onload = () => r((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(file);
+          });
+
+          const response = await fetch('/api/upload/base64', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, base64Data })
+          });
+
+          if (!response.ok) throw new Error("Fallback upload failed as well.");
+          const data = await response.json();
+          downloadUrl = data.url;
+        } else {
+          throw storageErr;
+        }
+      }
       
       const docData = {
         title: file.name,
@@ -240,10 +281,8 @@ export default function AdminPanel() {
       await fetchStats();
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
-      console.error('Admin Upload Error:', e);
-      let errMsg = e.message || 'Unknown error';
-      if (e.code === 'storage/unauthorized') errMsg = "Permission Denied: Firebase Storage rules need adjustment.";
-      alert(`Upload failed: ${errMsg}`);
+      console.error('Final Admin Upload Error:', e);
+      alert(`Upload Failed: ${e.message}`);
       setUploadState('error');
     }
     

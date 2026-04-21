@@ -94,20 +94,50 @@ export default function Dashboard() {
          const storageRef = ref(storage, `users/${user.uid}/${Date.now()}-${file.name}`);
          const uploadTask = uploadBytesResumable(storageRef, file);
 
-         await new Promise<void>((resolve, reject) => {
-            uploadTask.on('state_changed', 
-               (snapshot) => {
-                  const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-                  setUploadStatus(`Uploading: ${progress}%`);
-               }, 
-               reject, 
-               () => resolve()
-            );
-         });
+         let downloadUrl = '';
+         try {
+            // 15-second heartbeat timeout
+            downloadUrl = await new Promise<string>((resolve, reject) => {
+               const timeout = setTimeout(() => {
+                  uploadTask.cancel();
+                  reject(new Error('TIMEOUT'));
+               }, 15000);
 
-         setUploadStatus('Processing...');
-         const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-         
+               uploadTask.on('state_changed', 
+                  (snapshot) => {
+                     const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                     setUploadStatus(`Uploading: ${progress}%`);
+                     if (snapshot.bytesTransferred > 0) clearTimeout(timeout);
+                  }, 
+                  reject, 
+                  async () => {
+                     clearTimeout(timeout);
+                     const url = await getDownloadURL(uploadTask.snapshot.ref);
+                     resolve(url);
+                  }
+               );
+            });
+         } catch (storageErr: any) {
+            console.warn("Direct upload blocked/stuck. Falling back to platform tunnel...");
+            setUploadStatus('Using stable tunnel...');
+            
+            const base64Data = await new Promise<string>((r) => {
+               const reader = new FileReader();
+               reader.onload = () => r((reader.result as string).split(',')[1]);
+               reader.readAsDataURL(file);
+            });
+
+            const response = await fetch('/api/upload/base64', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ filename: file.name, base64Data })
+            });
+
+            if (!response.ok) throw new Error("Connection lost. Please try a smaller file.");
+            const data = await response.json();
+            downloadUrl = data.url;
+         }
+
          setUploadStatus('Saving record...');
          const docData = {
            title: file.name,
