@@ -202,9 +202,22 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      const storageRef = ref(storage, `users/${selectedUserId}/documents/${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const downloadUrl = await getDownloadURL(storageRef);
+      // Use local Express backend for file upload to avoid Firebase Storage unprovisioned bucket issues
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const uploadRes = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json();
+        throw new Error(errData.error || 'Failed to upload document');
+      }
+      
+      const uploadData = await uploadRes.json();
+      const downloadUrl = uploadData.url;
 
       const docData = {
         title: file.name,
@@ -298,6 +311,12 @@ export default function AdminPanel() {
             await deleteObject(fileRef);
          } catch (err) {
             console.warn("Storage item missing or couldn't delete", err);
+         }
+      } else if (itemToDelete.file_path && itemToDelete.file_path.startsWith('/uploads/')) {
+         try {
+            await fetch(`/api/delete-file?file_path=${encodeURIComponent(itemToDelete.file_path)}`, { method: 'DELETE' });
+         } catch (err) {
+            console.warn("Local storage item missing or couldn't delete", err);
          }
       }
       

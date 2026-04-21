@@ -46,7 +46,7 @@ service cloud.firestore {
       
       allow create: if isSignedIn() 
         && isValidId(userId) 
-        && isOwner(userId)
+        && (isOwner(userId) || isAdmin())
         && isValidUser(incoming())
         // Prevent self-elevation to Admin
         && (incoming().role != 'Admin' || request.auth.token.email == 'bcicomputerpoint@gmail.com');
@@ -78,7 +78,7 @@ service cloud.firestore {
         }
 
         allow get: if isOwner(userId) || isAdmin();
-        allow create, update: if isOwner(userId) && isValidId(userId) && isValidProfile(incoming());
+        allow create, update: if (isOwner(userId) || isAdmin()) && isValidId(userId) && isValidProfile(incoming());
         allow delete: if isAdmin();
       }
 
@@ -104,7 +104,7 @@ service cloud.firestore {
         
         allow get: if isOwner(userId) || existing().visibility == 'Public' || isAdmin();
         
-        allow create: if isOwner(userId) 
+        allow create: if (isOwner(userId) || isAdmin()) 
           && isValidId(itemId)
           && isValidDriveItem(incoming());
 

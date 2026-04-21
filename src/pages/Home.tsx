@@ -60,8 +60,12 @@ export default function Home() {
         </div>
       </div>
 
-      <footer className="mt-24 pb-8 w-full text-center text-sm text-slate-500 border-t border-slate-200 pt-8">
-        Developed by Online Academy, Contact - <a href="mailto:bcicomputerpoint@gmail.com" className="hover:text-indigo-600 transition-colors">bcicomputerpoint@gmail.com</a>
+      <footer className="mt-24 pb-8 w-full text-center text-sm text-slate-500 border-t border-slate-200 pt-8 flex items-center justify-center gap-2">
+        <span>Developed by Online Academy, Contact - <a href="mailto:bcicomputerpoint@gmail.com" className="hover:text-indigo-600 transition-colors">bcicomputerpoint@gmail.com</a></span>
+        <span className="text-slate-300">|</span>
+        <Link to="/privacy-policy" className="hover:text-indigo-600 transition-colors font-medium">Privacy Policy</Link>
+        <span className="text-slate-300">|</span>
+        <Link to="/terms-of-use" className="hover:text-indigo-600 transition-colors font-medium">Terms of Use</Link>
       </footer>
     </div>
   );

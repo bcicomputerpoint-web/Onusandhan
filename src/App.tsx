@@ -17,6 +17,8 @@ import AssignmentSubmission from './pages/AssignmentSubmission';
 import LmsManagement from './pages/LmsManagement';
 import CourseDetail from './pages/CourseDetail';
 import Navbar from './components/Navbar';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfUse from './pages/TermsOfUse';
 import { DashboardLayout } from './components/dashboard/DashboardLayout';
 
 interface AppUser {
@@ -176,6 +178,8 @@ export default function App() {
           <div className="min-h-screen bg-[#f4f7f9] font-sans text-slate-900">
             <Routes>
               <Route path="/" element={<><Navbar /><Home /></>} />
+              <Route path="/privacy-policy" element={<><Navbar /><PrivacyPolicy /></>} />
+              <Route path="/terms-of-use" element={<><Navbar /><TermsOfUse /></>} />
               <Route path="/login" element={<><Navbar /><Login /></>} />
               <Route path="/register" element={<><Navbar /><Register /></>} />
               
