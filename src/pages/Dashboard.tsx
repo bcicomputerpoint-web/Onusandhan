@@ -67,6 +67,10 @@ export default function Dashboard() {
 
    const handleFileSelect = (category: string, file: File) => {
       if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+         alert("File size exceeds the 10MB limit. Please upload a smaller file.");
+         return;
+      }
       const objectUrl = URL.createObjectURL(file);
       setPreviewContext({ category, file, objectUrl });
    };
@@ -87,7 +91,7 @@ export default function Dashboard() {
          formData.append('file', file);
          
          const controller = new AbortController();
-         const timeoutId = setTimeout(() => controller.abort(), 15000);
+         const timeoutId = setTimeout(() => controller.abort(), 120000);
 
          const uploadRes = await fetch('/api/upload', {
            method: 'POST',

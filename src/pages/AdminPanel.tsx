@@ -205,13 +205,19 @@ export default function AdminPanel() {
     if (!e.target.files || !e.target.files[0] || !selectedUserId) return;
     const file = e.target.files[0];
     
+    if (file.size > 10 * 1024 * 1024) {
+      alert("File size exceeds the 10MB limit. Please upload a smaller file.");
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    
     setUploadState('uploading');
     try {
       const formData = new FormData();
       formData.append('file', file);
       
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 120 seconds timeout
       
       const uploadRes = await fetch('/api/upload', {
         method: 'POST',
