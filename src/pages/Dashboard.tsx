@@ -88,62 +88,65 @@ export default function Dashboard() {
       setUploadingState(prev => ({ ...prev, [category]: true }));
       setUploadStatus('Preparing upload...');
       
-      try {
-         console.log("Initiating Multi-part Form Upload...");
-         
-         const formData = new FormData();
-         formData.append('file', file);
+       try {
+          console.log("Initiating Multi-part Form Upload...");
+          
+          const formData = new FormData();
+          formData.append('file', file);
 
-         const uploadUrl = `${window.location.origin}/api/upload`;
-         console.log("Fetching from:", uploadUrl);
+          // Use the more standard relative path without absolute host
+          const uploadPath = '/api/process/doc';
+          console.log("Submitting to:", uploadPath);
 
-         setUploadStatus('Connecting to server...');
-         const response = await fetch(uploadUrl, {
-            method: 'POST',
-            body: formData,
-            headers: {
-               'Accept': 'application/json'
-            }
-         });
+          setUploadStatus('Connecting to server...');
+          const response = await fetch(uploadPath, {
+             method: 'POST',
+             body: formData,
+             // Removed all manual headers to let the browser handle boundary correctly
+          });
 
-         if (!response.ok) {
-            const errData = await response.json().catch(() => ({ error: 'Local server error' }));
-            throw new Error(errData.error || `Upload failed with status ${response.status}`);
-         }
+          if (!response.ok) {
+             let errorMsg = `Server returned ${response.status}`;
+             try {
+                const errData = await response.json();
+                errorMsg = errData.error || errorMsg;
+             } catch (e) {}
+             throw new Error(errorMsg);
+          }
 
-         const uploadData = await response.json();
-         const downloadUrl = uploadData.url;
-         
-         // Step 3: Database Sync
-         setUploadStatus('Saving record...');
-         const docData = {
-           title: file.name,
-           item_type: 'Document',
-           category,
-           file_path: downloadUrl,
-           user_id: user.uid,
-           created_at: Date.now(),
-           visibility: 'Private'
-         };
-         
-         // Database save (usually very fast)
-         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
+          const uploadData = await response.json();
+          const downloadUrl = uploadData.url;
+          
+          // Step 3: Database Sync
+          setUploadStatus('Saving record...');
+          const docData = {
+            title: file.name,
+            item_type: 'Document',
+            category,
+            file_path: downloadUrl,
+            user_id: user.uid,
+            created_at: Date.now(),
+            visibility: 'Private'
+          };
+          
+          // Database save (usually very fast)
+          const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
 
-         setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
-         handleCancelPreview();
-         alert("Success! File uploaded and saved.");
-      } catch (e: any) {
-         console.error('Final Upload Error Context:', e);
-         let customMsg = e.message;
-         if (customMsg === 'Failed to fetch') {
-            customMsg = "Network Error (Failed to fetch). This usually means the browser blocked the request or the server is down. Check your console logs.";
-         }
-         alert(`Submission failed: ${customMsg}\n\nHost: ${window.location.host}`);
-      } finally {
-         setUploadingState(prev => ({ ...prev, [category]: false }));
-         setUploadStatus('');
-      }
-   };
+          setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
+          handleCancelPreview();
+          alert("Success! File uploaded and record saved.");
+       } catch (e: any) {
+          console.error('Final Upload Error Context:', e);
+          let detail = e.message;
+          if (detail === 'Failed to fetch') {
+             detail = "Network error: Connection blocked by firewall, VPN, or browser extension. Try incognito mode or a different internet connection.";
+          }
+          alert(`Submission failed: ${detail}`);
+       } finally {
+          setUploadingState(prev => ({ ...prev, [category]: false }));
+          setUploadStatus('');
+       }
+    };
 
    const handleLinkSubmit = async (data: any) => {
      if (!user?.uid) return;

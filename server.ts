@@ -64,11 +64,12 @@ async function startServer() {
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'))); // statically serve files
+  app.use('/files', express.static(path.join(process.cwd(), 'uploads'))); // Use /files instead of /uploads
 
   // Diagnostic route
   app.get('/api/ping', (req, res) => {
-    res.json({ status: 'live', timestamp: Date.now() });
+    console.log('Ping check from:', req.headers.origin);
+    res.json({ status: 'live', host: req.headers.host });
   });
 
   // Seed demo admin if not exists
@@ -220,16 +221,20 @@ async function startServer() {
     }
   });
 
-  // Handle generic file upload
-  app.post('/api/upload', (req: any, res: any) => {
+  // Improved upload endpoint with logging
+  app.post('/api/process/doc', (req: any, res: any) => {
+    console.log('--- Incoming File Upload ---');
     upload.single('file')(req, res, (err: any) => {
       if (err) {
+        console.error('Upload Error (Multer):', err.message);
         return res.status(400).json({ error: err.message });
       }
       if (!req.file) {
+        console.warn('Upload Warning: No file received');
         return res.status(400).json({ error: 'No file provided' });
       }
-      res.json({ url: `/uploads/${req.file.filename}` });
+      console.log('Upload Success:', req.file.filename);
+      res.json({ url: `/files/${req.file.filename}` });
     });
   });
 

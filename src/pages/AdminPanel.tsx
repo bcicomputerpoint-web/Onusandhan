@@ -218,20 +218,20 @@ export default function AdminPanel() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const apiUrl = `${window.location.origin}/api/upload`;
-      console.log("Admin fetching from:", apiUrl);
-
-      const response = await fetch(apiUrl, {
+      // Use the new endpoint
+      const response = await fetch('/api/process/doc', {
         method: 'POST',
         body: formData,
-        headers: {
-          'Accept': 'application/json'
-        }
+        // No manual headers
       });
 
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({ error: 'Local server error' }));
-        throw new Error(errData.error || `Upload failed with status ${response.status}`);
+        let errorMsg = `Server error ${response.status}`;
+        try {
+          const errData = await response.json();
+          errorMsg = errData.error || errorMsg;
+        } catch (e) {}
+        throw new Error(errorMsg);
       }
 
       const uploadData = await response.json();
@@ -256,9 +256,9 @@ export default function AdminPanel() {
       console.error('Admin Upload Error:', e);
       let errMsg = e.message || 'Unknown error';
       if (errMsg === 'Failed to fetch') {
-        errMsg = "Network Error: Browser blocked the request or server is unreachable. Check console logs.";
+        errMsg = "Network Error: Request blocked by browser or connection dropped.";
       }
-      alert(`Upload failed: ${errMsg}\n\nHost: ${window.location.host}`);
+      alert(`Upload failed: ${errMsg}`);
       setUploadState('error');
     }
     
