@@ -15,6 +15,7 @@ export default function Dashboard() {
    const [items, setItems] = useState<any[]>([]);
    const [profile, setProfile] = useState<any>(null);
    const [uploadingState, setUploadingState] = useState<Record<string, boolean>>({});
+   const [uploadStatus, setUploadStatus] = useState<string>('');
    const [isSubmittingLink, setIsSubmittingLink] = useState(false);
    const [searchQuery, setSearchQuery] = useState('');
    const [filterType, setFilterType] = useState('All');
@@ -85,10 +86,12 @@ export default function Dashboard() {
       
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
+      setUploadStatus('Processing file...');
+      
       try {
          console.log("Initiating Server-Side Base64 Upload...");
          
-         // Convert file to Base64
+         // Step 1: Base64 Conversion
          const base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => {
@@ -99,6 +102,8 @@ export default function Dashboard() {
             reader.readAsDataURL(file);
          });
 
+         // Step 2: Server Request
+         setUploadStatus('Sending to server...');
          const controller = new AbortController();
          const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
 
@@ -122,6 +127,8 @@ export default function Dashboard() {
          const uploadData = await response.json();
          const downloadUrl = uploadData.url;
          
+         // Step 3: Database Sync
+         setUploadStatus('Saving record...');
          const docData = {
            title: file.name,
            item_type: 'Document',
@@ -137,15 +144,16 @@ export default function Dashboard() {
 
          setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
-         alert("Successfully uploaded to local server!");
+         alert("Successfully uploaded and saved!");
       } catch (e: any) {
-         console.error('Final Upload Error:', e);
+         console.error('Final Upload Error Context:', e);
          let errMsg = e.message || 'Unknown error';
-         if (e.name === 'AbortError') errMsg = "Upload timed out (took too long). Try a smaller file.";
-         alert(`Submission failed: ${errMsg}`);
+         if (e.name === 'AbortError') errMsg = "Upload timed out (server took too long).";
+         alert(`Submission failed: ${errMsg}\n\nTechnical Tip: Ensure 'onusandhan.in' is in Firebase Authorized Domains.`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
-      }
+         setUploadStatus('');
+       }
    };
 
    const handleLinkSubmit = async (data: any) => {
@@ -497,6 +505,7 @@ export default function Dashboard() {
            onConfirm={handleFileUpload} 
            onCancel={handleCancelPreview} 
            isUploading={previewContext ? uploadingState[previewContext.category] : false} 
+           uploadStatus={uploadStatus}
          />
          
          <ConfirmModal

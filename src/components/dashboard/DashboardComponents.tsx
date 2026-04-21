@@ -341,7 +341,7 @@ export function LinkForm({ onSubmit, isSubmitting }: { onSubmit: (data: any) => 
     </div>
   )
 }
-export function PreviewModal({ file, category, objectUrl, onConfirm, onCancel, isUploading }: any) {
+export function PreviewModal({ file, category, objectUrl, onConfirm, onCancel, isUploading, uploadStatus }: any) {
   if (!file) return null;
   const isImage = file.type.startsWith('image/');
   const isPDF = file.type === 'application/pdf';
@@ -402,7 +402,7 @@ export function PreviewModal({ file, category, objectUrl, onConfirm, onCancel, i
                   {isUploading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      Uploading...
+                      {uploadStatus || 'Uploading...'}
                     </>
                   ) : (
                     <>
