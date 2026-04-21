@@ -86,59 +86,10 @@ export default function Dashboard() {
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       try {
-         // Use local Express backend for file upload to avoid Firebase Storage unprovisioned bucket issues
-         const fileData = await new Promise<string>((resolve, reject) => {
-           const reader = new FileReader();
-           reader.onload = () => {
-             const result = reader.result as string;
-             // extract base64 part
-             const base64Data = result.split(',')[1];
-             resolve(base64Data);
-           };
-           reader.onerror = reject;
-           reader.readAsDataURL(file);
-         });
-
-         const controller = new AbortController();
-         const timeoutId = setTimeout(() => controller.abort(), 120000);
-
-         const uploadRes = await fetch('/api/upload/base64', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({
-              filename: file.name,
-              base64Data: fileData
-           }),
-           signal: controller.signal
-         });
-         clearTimeout(timeoutId);
+         const storageRef = ref(storage, `drive/${user.uid}/${Date.now()}-${file.name}`);
+         const uploadResult = await uploadBytes(storageRef, file);
+         const downloadUrl = await getDownloadURL(uploadResult.ref);
          
-         if (!uploadRes.ok) {
-           let errMsg = 'Failed to upload document to server';
-           try {
-             const errText = await uploadRes.text();
-             try {
-               const errData = JSON.parse(errText);
-               errMsg = errData.error || errMsg;
-             } catch (e) {
-               if (uploadRes.status === 413) errMsg = 'File is too large for the network proxy.';
-               else errMsg = `Server Error (${uploadRes.status}): Please try a smaller file.`;
-             }
-           } catch(e) {}
-           throw new Error(errMsg);
-         }
-         
-         const responseText = await uploadRes.text();
-         let uploadData;
-         try {
-           uploadData = JSON.parse(responseText);
-         } catch (e) {
-           console.error("Server returned non-JSON 200 OK:", responseText.substring(0, 100));
-           throw new Error("Server returned an invalid HTML page instead of a file URL. The network might be dropping the upload.");
-         }
-         
-         const downloadUrl = uploadData.url;
-
          const docData = {
            title: file.name,
            item_type: 'Document',
