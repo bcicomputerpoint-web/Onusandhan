@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, useLanguage } from '../App';
 import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal, ProfileStrengthTracker } from '../components/dashboard/DashboardComponents';
-import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode, BookOpen } from 'lucide-react';
+import AIAssistant from '../components/AIAssistant';
+import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode, BookOpen, Sparkles } from 'lucide-react';
 import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -535,6 +536,8 @@ export default function Dashboard() {
             onCancel={() => setItemToDelete(null)}
             isProcessing={isDeleting}
          />
+
+         <AIAssistant />
       </div>
    )
 }

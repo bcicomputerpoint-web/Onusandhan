@@ -196,7 +196,13 @@ app.delete('/api/drive/:id', authenticateToken, (req: any, res: any) => {
 app.get('/api/courses', authenticateToken, (req: any, res) => {
   if (!globalDb) return res.status(503).json({ error: 'System initializing' });
   try {
-    const courses = globalDb.prepare('SELECT * FROM courses ORDER BY created_at DESC').all();
+    const courses = globalDb.prepare(`
+      SELECT c.*, p.full_name as instructor_name,
+      (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as student_count
+      FROM courses c 
+      JOIN profiles p ON c.instructor_id = p.user_id
+      ORDER BY c.created_at DESC
+    `).all();
     res.json(courses);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -215,6 +221,36 @@ app.post('/api/courses', authenticateToken, (req: any, res) => {
   }
 });
 
+app.get('/api/enrollments', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  try {
+    const enrollments = globalDb.prepare(`
+      SELECT e.*, c.title as course_title, c.description as course_description 
+      FROM enrollments e 
+      JOIN courses c ON e.course_id = c.id 
+      WHERE e.user_id = ?
+    `).all(req.user.id);
+    res.json(enrollments);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/enrollments', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  const { course_id } = req.body;
+  try {
+    const info = globalDb.prepare('INSERT INTO enrollments (user_id, course_id) VALUES (?, ?)').run(req.user.id, course_id);
+    res.json({ id: info.lastInsertRowid });
+  } catch (error: any) {
+    // If already enrolled, just return 200
+    if (error.message.includes('UNIQUE constraint failed')) {
+      return res.json({ message: 'Already enrolled' });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/courses/:id', authenticateToken, (req: any, res) => {
   if (!globalDb) return res.status(503).json({ error: 'System initializing' });
   try {
@@ -224,6 +260,27 @@ app.get('/api/courses/:id', authenticateToken, (req: any, res) => {
     res.json({ ...course, lessons, assignments });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// AI Assistant Route (Gemini Integration)
+app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
+  const { message, context } = req.body;
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+    // Use the model directly as per @google/genai patterns
+    const result = await genAI.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        { role: 'user', parts: [{ text: `System: Onusandhan Academic Assistant. Context: ${JSON.stringify(context || {})}` }] },
+        { role: 'user', parts: [{ text: message }] }
+      ]
+    });
+    res.json({ reply: result.text });
+  } catch (error: any) {
+    console.error("AI Error:", error);
+    res.status(500).json({ error: "AI failed to respond." });
   }
 });
 

@@ -68,21 +68,23 @@ export default function LmsDashboard() {
     const fetchLearningData = async () => {
       if (!user) return;
       try {
-        const enrQuery = query(collection(db, 'enrollments'), where('user_id', '==', user.uid));
-        const enrSnap = await getDocs(enrQuery);
-        
-        const enrData = await Promise.all(enrSnap.docs.map(async (d) => {
-          const data = d.data() as any;
-          const courseRef = doc(db, 'courses', data.course_id);
-          const courseSnap = await getDoc(courseRef);
-          return {
-            id: d.id,
-            ...data,
-            course_data: courseSnap.exists() ? { id: courseSnap.id, ...courseSnap.data() } as Course : undefined
-          } as Enrollment;
-        }));
-        
-        setEnrollments(enrData);
+        const response = await fetch('/api/enrollments', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('onusandhan_token')}` }
+        });
+        if (response.ok) {
+           const data = await response.json();
+           setEnrollments(data.map((enr: any) => ({
+             ...enr,
+             course_data: {
+               id: enr.course_id,
+               title: enr.course_title,
+               description: enr.course_description,
+               category: 'Research',
+               level: 'PhD',
+               instructor_name: 'Dr. Scholar'
+             }
+           })));
+        }
       } catch (error) {
         console.error("Error fetching LMS data:", error);
       } finally {
