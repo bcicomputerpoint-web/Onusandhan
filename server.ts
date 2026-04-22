@@ -23,8 +23,17 @@ function log(msg: string) {
   const themedMsg = `[${new Date().toISOString()}] ${msg}`;
   console.log(themedMsg);
   serverLogs.push(themedMsg);
-  if (serverLogs.length > 200) serverLogs.shift();
+  if (serverLogs.length > 500) serverLogs.shift();
 }
+
+// Global Exception Tracking
+process.on('uncaughtException', (err) => {
+  log(`CRITICAL: Uncaught Exception: ${err.message}\n${err.stack}`);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  log(`CRITICAL: Unhandled Rejection: ${reason?.message || reason}`);
+});
 
 // Multer Storage & Validation Configuration (Max Size: 10MB)
 const storage = multer.diskStorage({
@@ -108,11 +117,19 @@ async function startServer() {
   });
 
   app.get('/api/health', (req, res) => {
+    let dbStatus = 'not_accessed';
+    try {
+      dbStatus = 'ready';
+    } catch (e: any) {
+      dbStatus = `error: ${e.message}`;
+    }
+
     res.json({ 
       status: 'ok', 
-      version: 'v4.11', 
+      version: 'v4.12', 
       time: new Date().toISOString(),
       mode: process.env.NODE_ENV || 'production',
+      database: dbStatus,
       storage_ready: fs.existsSync(uploadDir)
     });
   });
