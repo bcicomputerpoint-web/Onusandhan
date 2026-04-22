@@ -213,44 +213,48 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin: Executing High-Performance Raw Upload...");
+      console.log("Admin: Executing High-Reliability Chunked Upload...");
       
-      const downloadUrl = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload/raw', true);
-        
-        // Pass filename in header to keep the body purely binary
-        xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
-        
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const progress = Math.round((event.loaded / event.total) * 100);
-            console.log(`Raw upload progress: ${progress}%`);
-          }
-        };
+      const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
+      let downloadUrl = '';
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const res = JSON.parse(xhr.responseText);
-              resolve(res.url);
-            } catch (e) {
-              reject(new Error("Invalid response from server"));
-            }
-          } else {
-            reject(new Error(`Server rejected with status ${xhr.status}`));
-          }
-        };
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const chunk = file.slice(start, end);
 
-        xhr.onerror = () => reject(new Error("Network connection lost or blocked."));
-        xhr.ontimeout = () => reject(new Error("Connection timed out. Check internet speed."));
+        // Convert slice to base64
+        const base64Data = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+          };
+          reader.readAsDataURL(chunk);
+        });
+
+        const response = await fetch('/api/upload/chunk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chunkIndex: i,
+            totalChunks,
+            filename: file.name,
+            uploadId,
+            data: base64Data
+          })
+        });
+
+        if (!response.ok) throw new Error(`Chunk ${i+1} failed`);
         
-        // 60-second timeout for large academic files
-        xhr.timeout = 60000;
+        const res = await response.json();
+        if (res.url) downloadUrl = res.url;
         
-        // Send pure binary data
-        xhr.send(file);
-      });
+        const progress = Math.round(((i + 1) / totalChunks) * 100);
+        console.log(`Chunked Upload Progress: ${progress}%`);
+      }
 
       console.log("Upload complete, saving to database...");
       const docData = {
@@ -270,7 +274,7 @@ export default function AdminPanel() {
       setTimeout(() => setUploadState('idle'), 3000);
     } catch (e: any) {
       console.error('Final Admin Upload Error:', e);
-      alert(`Upload Failed: ${e.message}\n\nTip: If the problem continues, try a smaller file or a different browser.`);
+      alert(`Upload Failed: ${e.message}\n\nTip: This usually means your internet provider or domain proxy is blocking large files. We have split the file into small pieces to try and bypass this.`);
       setUploadState('error');
     }
     

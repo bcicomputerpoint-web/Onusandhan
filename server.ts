@@ -221,6 +221,47 @@ async function startServer() {
     }
   });
 
+  // CHUNKED UPLOAD SYSTEM (v3) - The ultimate solution for restrictive firewalls
+  app.post('/api/upload/chunk', async (req: any, res: any) => {
+    const { chunkIndex, totalChunks, filename, uploadId, data } = req.body;
+    
+    if (!uploadId || !data) {
+      return res.status(400).json({ error: 'Missing uploadId or data' });
+    }
+
+    const tempDir = path.join(uploadDir, 'temp', uploadId);
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
+    const buffer = Buffer.from(data, 'base64');
+    fs.writeFileSync(chunkPath, buffer);
+
+    console.log(`Received chunk ${chunkIndex + 1}/${totalChunks} for ${filename}`);
+
+    if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
+      // Reassemble
+      const finalFilename = `chunked-${Date.now()}-${filename}`;
+      const finalPath = path.join(uploadDir, finalFilename);
+      const writeStream = fs.createWriteStream(finalPath);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const p = path.join(tempDir, `chunk-${i}`);
+        const b = fs.readFileSync(p);
+        writeStream.write(b);
+        fs.unlinkSync(p); // delete chunk
+      }
+      writeStream.end();
+      
+      fs.rmdirSync(tempDir);
+      console.log('Reassembled chunked file:', finalFilename);
+      return res.json({ url: `/files/${finalFilename}` });
+    }
+
+    res.json({ success: true });
+  });
+
   // RAW BINARY UPLOAD (v2) - Most robust method for firewalls/proxies
   app.post('/api/upload/raw', async (req: any, res: any) => {
     console.log('--- Raw binary upload incoming ---');

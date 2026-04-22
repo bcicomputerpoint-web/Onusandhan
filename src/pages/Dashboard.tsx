@@ -89,38 +89,47 @@ export default function Dashboard() {
       setUploadStatus('0%');
       
       try {
-         console.log("Dashboard: Executing High-Performance Raw Upload...");
+         console.log("Dashboard: Executing High-Reliability Chunked Upload...");
          
-         const downloadUrl = await new Promise<string>((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/upload/raw', true);
-            xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+         const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+         const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
+         let downloadUrl = '';
+
+         for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(file.size, start + CHUNK_SIZE);
+            const chunk = file.slice(start, end);
+
+            const base64Data = await new Promise<string>((resolve) => {
+               const reader = new FileReader();
+               reader.onload = () => {
+                  const result = reader.result as string;
+                  resolve(result.split(',')[1]);
+               };
+               reader.readAsDataURL(chunk);
+            });
+
+            const response = await fetch('/api/upload/chunk', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                  chunkIndex: i,
+                  totalChunks,
+                  filename: file.name,
+                  uploadId,
+                  data: base64Data
+               })
+            });
+
+            if (!response.ok) throw new Error(`Chunk ${i+1}/${totalChunks} failed`);
             
-            xhr.upload.onprogress = (event) => {
-               if (event.lengthComputable) {
-                  const progress = Math.round((event.loaded / event.total) * 100);
-                  setUploadStatus(`Uploading: ${progress}%`);
-               }
-            };
+            const progress = Math.round(((i + 1) / totalChunks) * 100);
+            setUploadStatus(`Uploading: ${progress}%`);
 
-            xhr.onload = () => {
-               if (xhr.status >= 200 && xhr.status < 300) {
-                  try {
-                     const res = JSON.parse(xhr.responseText);
-                     resolve(res.url);
-                  } catch (e) {
-                     reject(new Error("Server response malformed"));
-                  }
-               } else {
-                  reject(new Error(`Server error (${xhr.status})`));
-               }
-            };
-
-            xhr.onerror = () => reject(new Error("Connection blocked by network/firewall"));
-            xhr.ontimeout = () => reject(new Error("Request timed out"));
-            xhr.timeout = 60000;
-            xhr.send(file);
-         });
+            const res = await response.json();
+            if (res.url) downloadUrl = res.url;
+         }
 
          setUploadStatus('Saving record...');
          const docData = {
