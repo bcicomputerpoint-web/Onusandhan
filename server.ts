@@ -24,16 +24,21 @@ function log(msg: string) {
   if (serverLogs.length > 500) serverLogs.shift();
 }
 
-log(">>> SERVER STARTING v4.17 <<<");
+log(">>> ONUSANDHAN SERVER BOOT v4.18 <<<");
 
 const app = express();
 
 // --- 0. ROOT DIAGNOSTIC ---
 app.get('/', (req, res) => {
-  res.send(`<h1>Onusandhan v4.17 LIVE</h1><p>Time: ${new Date().toISOString()}</p><p>Host: ${req.headers.host}</p><p>Path: ${req.url}</p>`);
+  const distPath = path.join(process.cwd(), 'dist');
+  if (fs.existsSync(path.join(distPath, 'index.html'))) {
+    res.sendFile(path.join(distPath, 'index.html'));
+  } else {
+    res.send(`<h1>Onusandhan v4.18 LIVE</h1><p>Status: OK</p><p>Time: ${new Date().toISOString()}</p>`);
+  }
 });
 
-// --- 1. GLOBAL LOGGING ---
+// --- 1. GLOBAL LOGGING & MIDDELWARE ---
 app.use((req, res, next) => {
   log(`${req.method} ${req.url} - IP: ${req.ip}`);
   next();
@@ -45,14 +50,12 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // --- 2. PRIORITY DIAGNOSTIC ROUTES ---
 app.get(['/api/health', '/api/health/'], (req, res) => {
-  log("Health check triggered");
   res.json({ 
     status: 'ok', 
-    version: 'v4.17', 
+    version: 'v4.18', 
     time: new Date().toISOString(),
-    db_loaded: !!globalDb,
-    env: process.env.NODE_ENV || 'production',
-    headers: req.headers
+    db_ready: !!globalDb,
+    env: process.env.NODE_ENV || 'production'
   });
 });
 
@@ -65,12 +68,12 @@ app.get('/api/logs', (req, res) => {
 let globalDb: any = null;
 async function initDb() {
   try {
-    log("Background DB initialization starting...");
+    log("Loading database system...");
     const dbModule = await import('./src/db.ts');
-    globalDb = dbModule.db;
-    log("Background DB initialization complete.");
+    globalDb = dbModule.getDb(); // Use the exportable getter for safety
+    log("Database system ready.");
   } catch (e: any) {
-    log(`DATABASE LOAD ERROR: ${e.message}\n${e.stack}`);
+    log(`CRITICAL DATABASE INITIALIZATION ERROR: ${e.message}\n${e.stack}`);
   }
 }
 
@@ -86,8 +89,9 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// --- 4. CORE API ROUTES ---
+// --- 4. CORE API HANDLERS ---
 
+// Auth
 app.post('/api/auth/login', (req, res) => {
   if (!globalDb) return res.status(503).json({ error: 'System initializing' });
   const { email, password } = req.body;
@@ -117,6 +121,38 @@ app.post('/api/auth/register', (req, res) => {
   }
 });
 
+// Profile
+app.get('/api/profile', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  try {
+    const profile = globalDb.prepare(`
+      SELECT u.email, u.role, p.* FROM profiles p 
+      JOIN users u ON p.user_id = u.id WHERE p.user_id = ?
+    `).get(req.user.id);
+    res.json(profile);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/profile', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  const { institution, department, research_area, orcid, bio, full_name } = req.body;
+  try {
+    globalDb.prepare(`
+      UPDATE profiles SET 
+        full_name = COALESCE(?, full_name), institution = COALESCE(?, institution),
+        department = COALESCE(?, department), research_area = COALESCE(?, research_area),
+        orcid = COALESCE(?, orcid), bio = COALESCE(?, bio)
+      WHERE user_id = ?
+    `).run(full_name, institution, department, research_area, orcid, bio, req.user.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Drive
 app.get('/api/drive', authenticateToken, (req: any, res) => {
   if (!globalDb) return res.status(503).json({ error: 'System initializing' });
   try {
@@ -148,31 +184,92 @@ app.post('/api/drive', authenticateToken, upload.single('file'), (req: any, res:
   }
 });
 
+app.delete('/api/drive/:id', authenticateToken, (req: any, res: any) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  try {
+    const item = globalDb.prepare('SELECT * FROM drive_items WHERE id = ?').get(req.params.id) as any;
+    if (!item) return res.status(404).send();
+    if (item.user_id !== req.user.id && req.user.role !== 'Admin') return res.sendStatus(403);
+    
+    if (item.file_path) {
+      const fullPath = path.join(uploadDir, path.basename(item.file_path));
+      if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    }
+    globalDb.prepare('DELETE FROM drive_items WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// LMS Routes
+app.get('/api/courses', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  try {
+    const courses = globalDb.prepare('SELECT * FROM courses ORDER BY created_at DESC').all();
+    res.json(courses);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/courses', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  if (req.user.role !== 'Admin') return res.sendStatus(403);
+  try {
+    const { title, description } = req.body;
+    const info = globalDb.prepare('INSERT INTO courses (title, description, instructor_id) VALUES (?, ?, ?)').run(title, description, req.user.id);
+    res.json({ id: info.lastInsertRowid });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/courses/:id', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  try {
+    const course = globalDb.prepare('SELECT * FROM courses WHERE id = ?').get(req.params.id);
+    const lessons = globalDb.prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index ASC').all(req.params.id);
+    const assignments = globalDb.prepare('SELECT * FROM assignments WHERE course_id = ?').all(req.params.id);
+    res.json({ ...course, lessons, assignments });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin
+app.get('/api/admin/stats', authenticateToken, (req: any, res) => {
+  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+  if (req.user.role !== 'Admin') return res.sendStatus(403);
+  try {
+    const totalUsers = globalDb.prepare('SELECT COUNT(*) as count FROM users').get() as any;
+    const totalDocs = globalDb.prepare("SELECT COUNT(*) as count FROM drive_items WHERE item_type = 'Document'").get() as any;
+    const recentUsers = globalDb.prepare('SELECT u.id, u.email, u.role, p.full_name, u.created_at FROM users u LEFT JOIN profiles p ON u.id = p.user_id ORDER BY u.created_at DESC LIMIT 10').all();
+    res.json({ totalUsers: totalUsers.count, totalDocs: totalDocs.count, recentUsers });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- 5. STATIC FILES & CATCH-ALL ---
 app.use('/files', express.static(uploadDir));
 const distPath = path.join(process.cwd(), 'dist');
 
 if (fs.existsSync(distPath)) {
-  log(`Serving static files from ${distPath}`);
   app.use(express.static(distPath));
   app.get('*', (req, res) => {
-    // PROTECT API ROUTES FROM BEING CAUGHT BY VITE/SPA
-    if (req.url.startsWith('/api/')) {
-        log(`404 Fallback for API: ${req.url}`);
-        return res.status(404).json({ error: `API route not found: ${req.url}` });
-    }
+    if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
-  log("WARNING: dist folder missing. Frontend will not work.");
   app.get('*', (req, res) => {
     if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
-    res.send(`<h1>Onusandhan v4.17</h1><p>API Server is live, but UI build is missing. Check deployment logs.</p>`);
+    res.send(`<h1>Onusandhan v4.18</h1><p>API Server is live, but UI build is missing. Run build.</p>`);
   });
 }
 
 // --- 6. START ---
 app.listen(PORT, '0.0.0.0', () => {
-  log(`Server v4.17 LISTENING on 0.0.0.0:${PORT}`);
+  log(`Server v4.18 LISTENING on 0.0.0.0:${PORT}`);
   initDb();
 });

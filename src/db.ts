@@ -63,6 +63,56 @@ export function getDb() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        instructor_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(instructor_id) REFERENCES users(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS enrollments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        course_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, course_id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(course_id) REFERENCES courses(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS lessons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT,
+        video_url TEXT,
+        order_index INTEGER DEFAULT 0,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date DATETIME,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS submissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        file_path TEXT,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        feedback TEXT,
+        grade TEXT,
+        FOREIGN KEY(assignment_id) REFERENCES assignments(id),
+        FOREIGN KEY(user_id) REFERENCES users(id)
+      );
     `);
 
     // Insert default categories
