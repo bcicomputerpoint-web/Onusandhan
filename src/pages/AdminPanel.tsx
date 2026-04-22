@@ -233,10 +233,10 @@ export default function AdminPanel() {
 
         let retryCount = 0;
         let success = false;
-        while (retryCount < 5 && !success) { // Increased retries
+        while (retryCount < 5 && !success) {
           try {
             const progress = Math.round(((i + 1) / totalChunks) * 100);
-            setUploadStatus(progress === 100 ? 'Finalizing...' : `${progress}%`);
+            setUploadStatus(progress === 100 ? 'Finalizing pieces...' : `${progress}%`);
             
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk
@@ -249,18 +249,50 @@ export default function AdminPanel() {
             clearTimeout(timeoutId);
 
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            const res = await resp.json();
-            if (res.url) downloadUrl = res.url;
             success = true;
           } catch (err: any) {
             retryCount++;
             console.warn(`Admin: Chunk ${i} retry ${retryCount}...`, err);
             await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retryCount-1))); // Exponential backoff
-            if (retryCount === 5) throw new Error(`Chunk ${i} failed after 5 attempts: ${err.message}`);
+            if (retryCount === 5) throw new Error(`Piece ${i} failed after 5 attempts: ${err.message}`);
           }
         }
       }
-      setUploadStatus('Saving...');
+
+      // Explicit Assembly Phase
+      setUploadStatus('Merging pieces...');
+      let assemblyRetries = 0;
+      while (assemblyRetries < 3 && !downloadUrl) {
+        try {
+          const assembleResp = await fetch('/api/upload/assemble', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uploadId, totalChunks, filename: file.name })
+          });
+          
+          if (!assembleResp.ok) {
+            const errorData = await assembleResp.json();
+            if (assembleResp.status === 423) { // Locked/In Progress
+               setUploadStatus('Merging (checking status)...');
+               await new Promise(r => setTimeout(r, 3000));
+               assemblyRetries++;
+               continue;
+            }
+            throw new Error(errorData.error || `Assembly Error ${assembleResp.status}`);
+          }
+          
+          const result = await assembleResp.json();
+          downloadUrl = result.url;
+        } catch (err: any) {
+          assemblyRetries++;
+          if (assemblyRetries === 3) throw err;
+          await new Promise(r => setTimeout(r, 2000 * assemblyRetries));
+        }
+      }
+
+      if (!downloadUrl) throw new Error('Failed to retrieve final file URL');
+
+      setUploadStatus('Saving record...');
       const docData = { title: file.name, item_type: 'Document', category: selectedCategory, file_path: downloadUrl, user_id: selectedUserId, created_at: Date.now(), visibility: 'Private' };
       
       await addDoc(collection(db, `users/${selectedUserId}/drive_items`), docData);

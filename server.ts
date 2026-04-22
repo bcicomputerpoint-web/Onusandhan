@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './src/db.js'; // Use .js extension for Node.js ESM compatibility even with .ts files
+import { db } from './src/db.ts'; // Correct extension for native type stripping
 import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
@@ -273,15 +273,13 @@ async function startServer() {
       next();
     });
   }, async (req: any, res: any) => {
-    const { chunkIndex, totalChunks, filename, uploadId } = req.body;
+    const { chunkIndex, totalChunks, uploadId } = req.body;
     const chunkFile = req.file;
 
     if (!uploadId || !chunkFile) {
       console.error(`[Upload] Chunks: Missing metadata. id=${uploadId}, fileFound=${!!chunkFile}`);
       return res.status(400).json({ error: 'Missing metadata or chunk data' });
     }
-
-    console.log(`[Upload] Received chunk ${parseInt(chunkIndex) + 1}/${totalChunks} for ${filename} (id: ${uploadId})`);
     
     // Use /tmp for chunks to avoid any disk issues on Cloud Run
     const tempDir = path.join('/tmp', 'uploads-chunks', uploadId);
@@ -295,76 +293,92 @@ async function startServer() {
       fs.copyFileSync(chunkFile.path, chunkPath);
       fs.unlinkSync(chunkFile.path);
 
-      // Check if we have all chunks
       const files = fs.readdirSync(tempDir);
-      const total = parseInt(totalChunks);
+      console.log(`[Upload] Chunk ${parseInt(chunkIndex) + 1}/${totalChunks} saved for ${uploadId}. Progress: ${files.length}/${totalChunks}`);
       
-      console.log(`[Upload] Chunk ${parseInt(chunkIndex) + 1}/${total} saved for ${uploadId}. Progress: ${files.length}/${total}`);
-
-      if (files.length === total) {
-        // All chunks arrived! Start reassembly.
-        // Use a lock file to ensure only one reassembly happens
-        const lockFile = path.join(tempDir, 'reassembly.lock');
-        if (fs.existsSync(lockFile)) {
-          console.log(`[Upload] Reassembly already in progress for ${uploadId}, skipping concurrent trigger.`);
-          return res.json({ success: true, status: 'reassembling' });
-        }
-        fs.writeFileSync(lockFile, 'locked');
-
-        console.log(`[Upload] Starting reassembly for ${filename} (${total} chunks)...`);
-        const finalFilename = `final-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-        const finalPath = path.join(uploadDir, finalFilename);
-        
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-
-        const writeStream = fs.createWriteStream(finalPath);
-
-        try {
-          for (let i = 0; i < total; i++) {
-            const p = path.join(tempDir, `chunk-${i}`);
-            if (fs.existsSync(p)) {
-              const chunkBuffer = fs.readFileSync(p);
-              writeStream.write(chunkBuffer);
-            } else {
-              // This shouldn't happen because we checked files.length, but for safety:
-              throw new Error(`Chunk ${i} missing during reassembly`);
-            }
-          }
-          
-          await new Promise<void>((resolve, reject) => {
-            writeStream.on('finish', () => resolve());
-            writeStream.on('error', (err) => {
-              console.error('[Upload] WriteStream error during reassembly:', err);
-              reject(err);
-            });
-            writeStream.end();
-          });
-
-          const stats = fs.statSync(finalPath);
-          console.log(`[Upload] Reassembly complete: ${finalFilename} (${stats.size} bytes)`);
-
-          // Final cleanup
-          try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
-          
-          return res.json({ url: `/files/${finalFilename}` });
-        } catch (reassembleError: any) {
-          writeStream.end();
-          fs.unlinkSync(finalPath); // Delete partial file
-          console.error('[Upload] Reassembly failed:', reassembleError);
-          // Don't delete lock file yet, let client know it failed. 
-          // Actually, better to remove it so it can be retried if client sends last chunk again?
-          // Chunks are still there, so we can retry.
-          if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
-          return res.status(500).json({ error: `Reassembly failed: ${reassembleError.message}` });
-        }
-      }
-
       res.json({ success: true, received: chunkIndex });
     } catch (error) {
       console.error('[Upload] Chunk saving error:', error);
       res.status(500).json({ error: 'Server failed to save chunk' });
+    }
+  });
+
+  // Dedicated endpoint to assemble chunks - more robust than triggering on last chunk
+  app.post('/api/upload/assemble', async (req: any, res: any) => {
+    const { uploadId, totalChunks, filename } = req.body;
+    
+    if (!uploadId || !totalChunks || !filename) {
+      return res.status(400).json({ error: 'Missing assembly metadata' });
+    }
+
+    const tempDir = path.join('/tmp', 'uploads-chunks', uploadId);
+    const total = parseInt(totalChunks);
+
+    if (!fs.existsSync(tempDir)) {
+      return res.status(404).json({ error: 'Upload segments not found. Please try again.' });
+    }
+
+    const lockFile = path.join(tempDir, 'reassembly.lock');
+    if (fs.existsSync(lockFile)) {
+      console.log(`[Upload] Reassembly already in progress for ${uploadId}`);
+      return res.status(423).json({ error: 'Assembly in progress' });
+    }
+
+    try {
+      const files = fs.readdirSync(tempDir).filter(f => f.startsWith('chunk-'));
+      if (files.length < total) {
+        return res.status(400).json({ error: `Incomplete upload. Received ${files.length} of ${total} pieces.` });
+      }
+
+      fs.writeFileSync(lockFile, 'locked');
+      console.log(`[Upload] Starting explicit assembly for ${filename} (${total} chunks)...`);
+      
+      const finalFilename = `final-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const finalPath = path.join(uploadDir, finalFilename);
+      
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      const writeStream = fs.createWriteStream(finalPath);
+
+      try {
+        for (let i = 0; i < total; i++) {
+          const p = path.join(tempDir, `chunk-${i}`);
+          if (fs.existsSync(p)) {
+            const chunkBuffer = fs.readFileSync(p);
+            writeStream.write(chunkBuffer);
+          } else {
+            throw new Error(`Critical piece ${i} missing during assembly`);
+          }
+        }
+        
+        await new Promise<void>((resolve, reject) => {
+          writeStream.on('finish', () => resolve());
+          writeStream.on('error', (err) => {
+            console.error('[Upload] WriteStream error during assembly:', err);
+            reject(err);
+          });
+          writeStream.end();
+        });
+
+        const stats = fs.statSync(finalPath);
+        console.log(`[Upload] Assembly successful: ${finalFilename} (${stats.size} bytes)`);
+
+        // Final cleanup
+        try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
+        
+        return res.json({ url: `/files/${finalFilename}` });
+      } catch (assembleError: any) {
+        if (writeStream) writeStream.end();
+        if (fs.existsSync(finalPath)) try { fs.unlinkSync(finalPath); } catch(e) {}
+        console.error('[Upload] Assembly processing error:', assembleError);
+        if (fs.existsSync(lockFile)) try { fs.unlinkSync(lockFile); } catch(e) {}
+        return res.status(500).json({ error: `Assembly failed: ${assembleError.message}` });
+      }
+    } catch (error) {
+      console.error('[Upload] Assembly controller error:', error);
+      res.status(500).json({ error: 'Internal assembly failure' });
     }
   });
 
