@@ -4,10 +4,15 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './src/db.ts'; // Correct extension for native type stripping
+// Removed top-level db import to prevent startup crashes
 import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
+
+async function getDatabase() {
+  const { db } = await import('./src/db.ts');
+  return db;
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'onusandhan_super_secret_key_123';
 
@@ -89,16 +94,19 @@ const chunkUpload = multer({
   limits: { fileSize: 15 * 1024 * 1024 } // 15MB per chunk max
 });
 
+let db: any = null;
+
 async function startServer() {
-  log(">>> SERVER BOOT v4.13 STARTING <<<");
+  log(">>> SERVER BOOT v4.15 STARTING <<<");
   const app = express();
   const PORT = 3000;
 
-  // IMMEDIATE RESPONSE ROUTES (Before ANY middleware)
+  // 1. REGISTER HEALTH ROUTES FIRST
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      version: 'v4.13', 
+      version: 'v4.15', 
+      db_loaded: !!db,
       node: process.version,
       env: process.env.NODE_ENV || 'production'
     });
@@ -108,6 +116,22 @@ async function startServer() {
      res.setHeader('Content-Type', 'text/plain');
      res.send(serverLogs.join('\n'));
   });
+
+  // 2. START LISTENING IMMEDIATELY
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
+    log(`[${new Date().toISOString()}] Server listening on port ${PORT} (Early Listen)`);
+  });
+
+  // 3. LAZY LOAD DATABASE AND OTHER ROUTES
+  try {
+    log("Loading database module...");
+    const dbMod = await import('./src/db.ts');
+    db = dbMod.db;
+    log("Database module loaded successfully.");
+  } catch (e: any) {
+    log(`CRITICAL DATABASE LOAD FAILURE: ${e.message}`);
+    // We continue so health check stays alive
+  }
 
   // Logging middleware
   app.use((req, res, next) => {
@@ -209,6 +233,7 @@ async function startServer() {
 
   // Auth: Google OAuth Callback
   app.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res) => {
+    if (!db) return res.status(503).send("System initializing...");
     const { code } = req.query;
     const APP_URL = process.env.APP_URL || 'http://localhost:3000';
     const redirectUri = `${APP_URL}/auth/google/callback`;
@@ -531,6 +556,7 @@ async function startServer() {
 
   // Profile: Get current
   app.get('/api/profile', authenticateToken, (req: any, res) => {
+    if (!db) return res.status(503).json({ error: "System initializing" });
     try {
       const profile = db.prepare(`
         SELECT u.email, u.role, p.* 
@@ -677,14 +703,6 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[${new Date().toISOString()}] Server successfully started on port ${PORT}`);
-    console.log(`[${new Date().toISOString()}] Mode: ${process.env.NODE_ENV || 'development'}`);
-  });
 }
 
-startServer().catch(err => {
-  console.error("FATAL ERROR DURING STARTUP:", err);
-  process.exit(1);
-});
+startServer();
