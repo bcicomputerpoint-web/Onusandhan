@@ -105,8 +105,8 @@ export default function Dashboard() {
             let success = false;
             while (retryCount < 5 && !success) { // Increased retries to 5
                try {
-                  const percent = Math.round((i / totalChunks) * 100);
-                  setUploadStatus(`Uploading: ${percent}%`);
+                  const percent = Math.round(((i + 1) / totalChunks) * 100);
+                  setUploadStatus(percent === 100 ? 'Processing...' : `Uploading: ${percent}%`);
                   
                   const controller = new AbortController();
                   const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk

@@ -236,7 +236,7 @@ export default function AdminPanel() {
         while (retryCount < 5 && !success) { // Increased retries
           try {
             const progress = Math.round(((i + 1) / totalChunks) * 100);
-            setUploadStatus(`${progress}%`);
+            setUploadStatus(progress === 100 ? 'Finalizing...' : `${progress}%`);
             
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk

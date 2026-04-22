@@ -261,17 +261,29 @@ async function startServer() {
       }
 
       const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
-      fs.copyFileSync(chunkFile.path, chunkPath); // Use copy then unlink to be safer
+      fs.copyFileSync(chunkFile.path, chunkPath);
       fs.unlinkSync(chunkFile.path);
 
-      console.log(`Received chunk ${parseInt(chunkIndex) + 1}/${totalChunks} for ${filename}`);
+      // Check if we have all chunks
+      const files = fs.readdirSync(tempDir);
+      const total = parseInt(totalChunks);
+      
+      console.log(`[Upload] Chunk ${parseInt(chunkIndex) + 1}/${total} saved for ${uploadId}. Progress: ${files.length}/${total}`);
 
-      if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
-        console.log(`Reassembling ${totalChunks} chunks for ${filename}...`);
+      if (files.length === total) {
+        // All chunks arrived! Start reassembly.
+        // Use a lock file to ensure only one reassembly happens
+        const lockFile = path.join(tempDir, 'reassembly.lock');
+        if (fs.existsSync(lockFile)) {
+          console.log(`[Upload] Reassembly already in progress for ${uploadId}, skipping concurrent trigger.`);
+          return res.json({ success: true, status: 'reassembling' });
+        }
+        fs.writeFileSync(lockFile, 'locked');
+
+        console.log(`[Upload] Starting reassembly for ${filename} (${total} chunks)...`);
         const finalFilename = `final-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
         const finalPath = path.join(uploadDir, finalFilename);
         
-        // Ensure final directory exists just in case
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
@@ -279,12 +291,13 @@ async function startServer() {
         const writeStream = fs.createWriteStream(finalPath);
 
         try {
-          for (let i = 0; i < totalChunks; i++) {
+          for (let i = 0; i < total; i++) {
             const p = path.join(tempDir, `chunk-${i}`);
             if (fs.existsSync(p)) {
               const chunkBuffer = fs.readFileSync(p);
               writeStream.write(chunkBuffer);
             } else {
+              // This shouldn't happen because we checked files.length, but for safety:
               throw new Error(`Chunk ${i} missing during reassembly`);
             }
           }
@@ -292,31 +305,35 @@ async function startServer() {
           await new Promise<void>((resolve, reject) => {
             writeStream.on('finish', () => resolve());
             writeStream.on('error', (err) => {
-              console.error('[Upload] WriteStream error:', err);
+              console.error('[Upload] WriteStream error during reassembly:', err);
               reject(err);
             });
             writeStream.end();
           });
 
-          // Verify file exists and has size
           const stats = fs.statSync(finalPath);
-          console.log(`Successfully reassembled ${finalFilename} (${stats.size} bytes)`);
+          console.log(`[Upload] Reassembly complete: ${finalFilename} (${stats.size} bytes)`);
 
-          // Cleanup temp dir
+          // Final cleanup
           try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
           
           return res.json({ url: `/files/${finalFilename}` });
         } catch (reassembleError: any) {
           writeStream.end();
-          console.error('Reassembly processing error:', reassembleError);
+          fs.unlinkSync(finalPath); // Delete partial file
+          console.error('[Upload] Reassembly failed:', reassembleError);
+          // Don't delete lock file yet, let client know it failed. 
+          // Actually, better to remove it so it can be retried if client sends last chunk again?
+          // Chunks are still there, so we can retry.
+          if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
           return res.status(500).json({ error: `Reassembly failed: ${reassembleError.message}` });
         }
       }
 
       res.json({ success: true, received: chunkIndex });
     } catch (error) {
-      console.error('Chunk upload error:', error);
-      res.status(500).json({ error: 'Server reassembly failed' });
+      console.error('[Upload] Chunk saving error:', error);
+      res.status(500).json({ error: 'Server failed to save chunk' });
     }
   });
 
