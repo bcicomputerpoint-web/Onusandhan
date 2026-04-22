@@ -1,6 +1,6 @@
 {
-  "name": "Onusandhan v4.23 OPEN-UPLOAD",
-  "description": "Research document management platform v4.23 with open storage utility routes.",
+  "name": "Onusandhan v4.24 MULTI-INST",
+  "description": "Research document management platform v4.24 with Multi-Instance tracking for Published URLs.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

@@ -24,7 +24,8 @@ function log(msg: string) {
   if (serverLogs.length > 500) serverLogs.shift();
 }
 
-log(">>> ONUSANDHAN SERVER BOOT v4.23 <<<");
+log(">>> ONUSANDHAN SERVER BOOT v4.24 <<<");
+const INSTANCE_ID = Math.random().toString(36).substring(2, 7).toUpperCase();
 
 const app = express();
 
@@ -40,15 +41,56 @@ app.use((req, res, next) => {
   next();
 });
 
+// Binary chunk upload (STRICTLY BEFORE body-parser for raw stream handling)
+app.post('/api/upload/chunk/binary', (req, res) => {
+  const uploadId = req.headers['x-upload-id'] as string;
+  const chunkIndex = req.headers['x-chunk-index'] as string;
+  
+  if (!uploadId || chunkIndex === undefined) {
+    return res.status(400).json({ error: 'Missing headers' });
+  }
+
+  const chunkDir = path.join(uploadDir, 'chunks');
+  if (!fs.existsSync(chunkDir)) fs.mkdirSync(chunkDir, { recursive: true });
+
+  const userChunkDir = path.join(chunkDir, uploadId);
+  if (!fs.existsSync(userChunkDir)) fs.mkdirSync(userChunkDir, { recursive: true });
+  
+  const chunkPath = path.join(userChunkDir, `chunk-${chunkIndex}`);
+  const writeStream = fs.createWriteStream(chunkPath);
+  
+  req.pipe(writeStream);
+  
+  writeStream.on('finish', () => {
+    log(`[${INSTANCE_ID}] Chunk Recv: ${uploadId} pc:${chunkIndex}`);
+    res.json({ success: true, instance: INSTANCE_ID });
+  });
+  
+  writeStream.on('error', (err) => {
+    log(`[${INSTANCE_ID}] Chunk Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  });
+});
+
 app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // --- 2. PRIORITY DIAGNOSTIC ROUTES ---
 app.get(['/api/health', '/api/health/'], (req, res) => {
+  let writable = false;
+  try {
+    const testFile = path.join(uploadDir, '.write-test');
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    writable = true;
+  } catch(e) {}
+
   res.json({ 
     status: 'ok', 
-    version: 'v4.23', 
+    version: 'v4.24.1', 
+    instance: INSTANCE_ID,
+    storage_writable: writable,
     time: new Date().toISOString(),
     db_ready: !!globalDb,
     env: process.env.NODE_ENV || 'production'
@@ -88,33 +130,6 @@ const authenticateToken = (req: any, res: any, next: any) => {
 // --- 4. CHUNKED UPLOAD SYSTEM ---
 const chunkDir = path.join(uploadDir, 'chunks');
 if (!fs.existsSync(chunkDir)) fs.mkdirSync(chunkDir, { recursive: true });
-
-// Binary chunk upload (No token required for temporary fragments)
-app.post('/api/upload/chunk/binary', async (req, res) => {
-  const uploadId = req.headers['x-upload-id'] as string;
-  const chunkIndex = req.headers['x-chunk-index'] as string;
-  
-  if (!uploadId || chunkIndex === undefined) {
-    return res.status(400).json({ error: 'Missing headers' });
-  }
-
-  const userChunkDir = path.join(chunkDir, uploadId);
-  if (!fs.existsSync(userChunkDir)) fs.mkdirSync(userChunkDir, { recursive: true });
-  
-  const chunkPath = path.join(userChunkDir, `chunk-${chunkIndex}`);
-  const writeStream = fs.createWriteStream(chunkPath);
-  
-  req.pipe(writeStream);
-  
-  writeStream.on('finish', () => {
-    res.json({ success: true });
-  });
-  
-  writeStream.on('error', (err) => {
-    log(`Chunk Error: ${err.message}`);
-    res.status(500).json({ error: err.message });
-  });
-});
 
 app.post('/api/upload/chunk/form', upload.single('chunk'), (req, res) => {
   const { uploadId, chunkIndex, filename } = req.body;
@@ -425,6 +440,6 @@ if (fs.existsSync(distPath)) {
 
 // --- 6. START ---
 app.listen(PORT, '0.0.0.0', () => {
-  log(`Server v4.18 LISTENING on 0.0.0.0:${PORT}`);
+  log(`Server v4.24 [${INSTANCE_ID}] LISTENING on 0.0.0.0:${PORT}`);
   initDb();
 });
