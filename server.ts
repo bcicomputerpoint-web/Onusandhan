@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './src/db.ts'; // Using .ts for native node type stripping
+import { db } from './src/db.js'; // Use .js extension for Node.js ESM compatibility even with .ts files
 import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
@@ -20,11 +20,25 @@ if (!fs.existsSync(uploadDir)) {
 // Multer Storage & Validation Configuration (Max Size: 10MB)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
+    // Standard uploads go to permanent storage
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Chunks always go to /tmp for safety on Cloud Run
+const chunkStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    if (!fs.existsSync('/tmp/uploads-raw')) {
+      fs.mkdirSync('/tmp/uploads-raw', { recursive: true });
+    }
+    cb(null, '/tmp/uploads-raw');
+  },
+  filename: (req, file, cb) => {
+    cb(null, `chunk-${Date.now()}-${Math.random().toString(36).substring(7)}`);
   }
 });
 
@@ -53,8 +67,8 @@ const upload = multer({
 
 // Separate uploader for chunks without strict type checking (since segments might lose type info)
 const chunkUpload = multer({ 
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB per chunk is plenty
+  storage: chunkStorage,
+  limits: { fileSize: 15 * 1024 * 1024 } // 15MB per chunk max
 });
 
 async function startServer() {
@@ -80,6 +94,15 @@ async function startServer() {
       protocol: req.protocol,
       secure: req.secure,
       env: process.env.NODE_ENV
+    });
+  });
+
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      version: 'v4.5', 
+      time: new Date().toISOString(),
+      mode: process.env.NODE_ENV || 'development' 
     });
   });
 
@@ -241,12 +264,20 @@ async function startServer() {
   });
 
   // CHUNKED UPLOAD SYSTEM (v4) - FormData based for maximum proxy compatibility
-  app.post('/api/upload/chunk/form', chunkUpload.single('chunk'), async (req: any, res: any) => {
+  app.post('/api/upload/chunk/form', (req, res, next) => {
+    chunkUpload.single('chunk')(req, res, (err) => {
+      if (err) {
+        console.error('[Upload] Multer Error:', err);
+        return res.status(500).json({ error: `Upload preparation failed: ${err.message}` });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
     const { chunkIndex, totalChunks, filename, uploadId } = req.body;
     const chunkFile = req.file;
 
     if (!uploadId || !chunkFile) {
-      console.error(`[Upload] Chunks: Missing uploadId or chunk file. id=${uploadId}, hasFile=${!!chunkFile}`);
+      console.error(`[Upload] Chunks: Missing metadata. id=${uploadId}, fileFound=${!!chunkFile}`);
       return res.status(400).json({ error: 'Missing metadata or chunk data' });
     }
 
