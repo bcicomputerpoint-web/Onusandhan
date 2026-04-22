@@ -81,13 +81,13 @@ export default function Dashboard() {
       setPreviewContext(null);
    };
 
-   const handleFileUpload = async () => {
+    const handleFileUpload = async () => {
       if (!user?.uid || !previewContext) return;
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       setUploadStatus('0%');
       try {
-         const CHUNK_SIZE = 1024 * 1024;
+         const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB chunks are more reliable on slow networks
          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
          const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
          let downloadUrl = '';
@@ -103,20 +103,34 @@ export default function Dashboard() {
             formData.append('chunk', chunk);
             let retryCount = 0;
             let success = false;
-            while (retryCount < 3 && !success) {
+            while (retryCount < 5 && !success) { // Increased retries to 5
                try {
-                  setUploadStatus(`Uploading: ${Math.round((i / totalChunks) * 100)}%`);
-                  const resp = await fetch('/api/upload/chunk/form', { method: 'POST', body: formData });
-                  if (!resp.ok) throw new Error(`${resp.status}`);
+                  const percent = Math.round((i / totalChunks) * 100);
+                  setUploadStatus(`Uploading: ${percent}%`);
+                  
+                  const controller = new AbortController();
+                  const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk
+
+                  const resp = await fetch('/api/upload/chunk/form', { 
+                     method: 'POST', 
+                     body: formData,
+                     signal: controller.signal
+                  });
+                  clearTimeout(timeoutId);
+
+                  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                   const res = await resp.json();
                   if (res.url) downloadUrl = res.url;
                   success = true;
-               } catch {
+               } catch (err: any) {
                   retryCount++;
+                  console.warn(`Retry ${retryCount} for chunk ${i}`, err);
                   await new Promise(r => setTimeout(r, 1000 * retryCount));
+                  if (retryCount === 3) throw new Error(`Upload failed at ${Math.round((i/totalChunks)*100)}%: ${err.message}`);
                }
             }
          }
+         setUploadStatus('Saving to Database...');
          const docData = { title: file.name, item_type: 'Document', category, file_path: downloadUrl, user_id: user.uid, created_at: Date.now(), visibility: 'Private' };
          const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
          setItems((prev: any[]) => [{ id: newDoc.id, ...docData }, ...prev]);

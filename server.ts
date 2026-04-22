@@ -51,6 +51,12 @@ const upload = multer({
   fileFilter: fileFilter
 });
 
+// Separate uploader for chunks without strict type checking (since segments might lose type info)
+const chunkUpload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB per chunk is plenty
+});
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -235,26 +241,104 @@ async function startServer() {
   });
 
   // CHUNKED UPLOAD SYSTEM (v4) - FormData based for maximum proxy compatibility
-  app.post('/api/upload/chunk/form', upload.single('chunk'), async (req: any, res: any) => {
+  app.post('/api/upload/chunk/form', chunkUpload.single('chunk'), async (req: any, res: any) => {
     const { chunkIndex, totalChunks, filename, uploadId } = req.body;
     const chunkFile = req.file;
 
     if (!uploadId || !chunkFile) {
+      console.error(`[Upload] Chunks: Missing uploadId or chunk file. id=${uploadId}, hasFile=${!!chunkFile}`);
       return res.status(400).json({ error: 'Missing metadata or chunk data' });
     }
 
-    const tempDir = path.join(uploadDir, 'temp', uploadId);
+    console.log(`[Upload] Received chunk ${parseInt(chunkIndex) + 1}/${totalChunks} for ${filename} (id: ${uploadId})`);
+    
+    // Use /tmp for chunks to avoid any disk issues on Cloud Run
+    const tempDir = path.join('/tmp', 'uploads-chunks', uploadId);
+
+    try {
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
+      fs.copyFileSync(chunkFile.path, chunkPath); // Use copy then unlink to be safer
+      fs.unlinkSync(chunkFile.path);
+
+      console.log(`Received chunk ${parseInt(chunkIndex) + 1}/${totalChunks} for ${filename}`);
+
+      if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
+        console.log(`Reassembling ${totalChunks} chunks for ${filename}...`);
+        const finalFilename = `final-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const finalPath = path.join(uploadDir, finalFilename);
+        
+        // Ensure final directory exists just in case
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        const writeStream = fs.createWriteStream(finalPath);
+
+        try {
+          for (let i = 0; i < totalChunks; i++) {
+            const p = path.join(tempDir, `chunk-${i}`);
+            if (fs.existsSync(p)) {
+              const chunkBuffer = fs.readFileSync(p);
+              writeStream.write(chunkBuffer);
+            } else {
+              throw new Error(`Chunk ${i} missing during reassembly`);
+            }
+          }
+          
+          await new Promise<void>((resolve, reject) => {
+            writeStream.on('finish', () => resolve());
+            writeStream.on('error', (err) => {
+              console.error('[Upload] WriteStream error:', err);
+              reject(err);
+            });
+            writeStream.end();
+          });
+
+          // Verify file exists and has size
+          const stats = fs.statSync(finalPath);
+          console.log(`Successfully reassembled ${finalFilename} (${stats.size} bytes)`);
+
+          // Cleanup temp dir
+          try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
+          
+          return res.json({ url: `/files/${finalFilename}` });
+        } catch (reassembleError: any) {
+          writeStream.end();
+          console.error('Reassembly processing error:', reassembleError);
+          return res.status(500).json({ error: `Reassembly failed: ${reassembleError.message}` });
+        }
+      }
+
+      res.json({ success: true, received: chunkIndex });
+    } catch (error) {
+      console.error('Chunk upload error:', error);
+      res.status(500).json({ error: 'Server reassembly failed' });
+    }
+  });
+
+  // CHUNKED UPLOAD SYSTEM (v3) - The ultimate solution for restrictive firewalls
+  app.post('/api/upload/chunk', async (req: any, res: any) => {
+    const { chunkIndex, totalChunks, filename, uploadId, data } = req.body;
+    
+    if (!uploadId || !data) {
+      return res.status(400).json({ error: 'Missing uploadId or data' });
+    }
+
+    const tempDir = path.join('/tmp', 'uploads-chunks-base64', uploadId);
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
 
     const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
-    fs.renameSync(chunkFile.path, chunkPath);
-
-    console.log(`Received form-chunk ${chunkIndex}/${totalChunks} for ${filename}`);
+    const buffer = Buffer.from(data, 'base64');
+    fs.writeFileSync(chunkPath, buffer);
 
     if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
-      const finalFilename = `fchunked-${Date.now()}-${filename}`;
+      const finalFilename = `b64chunked-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       const finalPath = path.join(uploadDir, finalFilename);
       const writeStream = fs.createWriteStream(finalPath);
 
@@ -266,55 +350,17 @@ async function startServer() {
           fs.unlinkSync(p);
         }
       }
-      writeStream.end();
       
-      // Cleanup temp dir in background
-      setTimeout(() => {
-        try { if(fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true }); } catch(e) {}
-      }, 5000);
-
-      console.log('Reassembled form-chunked file:', finalFilename);
-      return res.json({ url: `/files/${finalFilename}` });
-    }
-
-    res.json({ success: true });
-  });
-
-  // CHUNKED UPLOAD SYSTEM (v3) - The ultimate solution for restrictive firewalls
-  app.post('/api/upload/chunk', async (req: any, res: any) => {
-    const { chunkIndex, totalChunks, filename, uploadId, data } = req.body;
-    
-    if (!uploadId || !data) {
-      return res.status(400).json({ error: 'Missing uploadId or data' });
-    }
-
-    const tempDir = path.join(uploadDir, 'temp', uploadId);
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-
-    const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
-    const buffer = Buffer.from(data, 'base64');
-    fs.writeFileSync(chunkPath, buffer);
-
-    console.log(`Received chunk ${chunkIndex + 1}/${totalChunks} for ${filename}`);
-
-    if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
-      // Reassemble
-      const finalFilename = `chunked-${Date.now()}-${filename}`;
-      const finalPath = path.join(uploadDir, finalFilename);
-      const writeStream = fs.createWriteStream(finalPath);
-
-      for (let i = 0; i < totalChunks; i++) {
-        const p = path.join(tempDir, `chunk-${i}`);
-        const b = fs.readFileSync(p);
-        writeStream.write(b);
-        fs.unlinkSync(p); // delete chunk
-      }
-      writeStream.end();
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', () => resolve());
+        writeStream.on('error', (err) => {
+          console.error('[Upload] Base64 WriteStream error:', err);
+          reject(err);
+        });
+        writeStream.end();
+      });
       
-      fs.rmdirSync(tempDir);
-      console.log('Reassembled chunked file:', finalFilename);
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
       return res.json({ url: `/files/${finalFilename}` });
     }
 

@@ -12,6 +12,7 @@ export default function AdminPanel() {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Thesis');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -205,15 +206,16 @@ export default function AdminPanel() {
     if (!e.target.files || !e.target.files[0] || !selectedUserId) return;
     const file = e.target.files[0];
     
-    if (file.size > 10 * 1024 * 1024) {
-      alert("File size exceeds the 10MB limit. Please upload a smaller file.");
+    if (file.size > 50 * 1024 * 1024) {
+      alert("File size exceeds the 50MB limit. Please upload a smaller file.");
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
     
     setUploadState('uploading');
+    setUploadStatus('0%'); 
     try {
-      const CHUNK_SIZE = 1024 * 1024;
+      const CHUNK_SIZE = 1 * 1024 * 1024; // 1MB for better reliability
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
       let downloadUrl = '';
@@ -231,20 +233,34 @@ export default function AdminPanel() {
 
         let retryCount = 0;
         let success = false;
-        while (retryCount < 3 && !success) {
+        while (retryCount < 5 && !success) { // Increased retries
           try {
-            const resp = await fetch('/api/upload/chunk/form', { method: 'POST', body: formData });
-            if (!resp.ok) throw new Error(`${resp.status}`);
+            const progress = Math.round(((i + 1) / totalChunks) * 100);
+            setUploadStatus(`${progress}%`);
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk
+
+            const resp = await fetch('/api/upload/chunk/form', { 
+               method: 'POST', 
+               body: formData,
+               signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const res = await resp.json();
             if (res.url) downloadUrl = res.url;
             success = true;
-          } catch {
+          } catch (err: any) {
             retryCount++;
-            await new Promise(r => setTimeout(r, 1000 * retryCount));
-            if (retryCount === 3) throw new Error("Chunk failed after retries");
+            console.warn(`Admin: Chunk ${i} retry ${retryCount}...`, err);
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retryCount-1))); // Exponential backoff
+            if (retryCount === 5) throw new Error(`Chunk ${i} failed after 5 attempts: ${err.message}`);
           }
         }
       }
+      setUploadStatus('Saving...');
       const docData = { title: file.name, item_type: 'Document', category: selectedCategory, file_path: downloadUrl, user_id: selectedUserId, created_at: Date.now(), visibility: 'Private' };
       
       await addDoc(collection(db, `users/${selectedUserId}/drive_items`), docData);
@@ -527,11 +543,20 @@ export default function AdminPanel() {
               <div className="flex items-end">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleAdminUpload} accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" />
                 <Button 
-                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 text-white rounded-lg font-medium transition-colors" 
+                  className="w-full h-11 bg-indigo-600 hover:bg-indigo-700 shadow-sm shadow-indigo-200 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2" 
                   disabled={!selectedUserId || uploadState === 'uploading'}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  {uploadState === 'uploading' ? 'Uploading...' : uploadState === 'success' ? 'Uploaded Successfully!' : 'Select & Upload File'}
+                  {uploadState === 'uploading' ? (
+                    <>
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+                      {uploadStatus || 'Uploading...'}
+                    </>
+                  ) : uploadState === 'success' ? (
+                    'Uploaded Successfully!'
+                  ) : (
+                    'Select & Upload File'
+                  )}
                 </Button>
               </div>
             </div>
