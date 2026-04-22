@@ -4,7 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db } from './src/db.js'; // Using .js extension for ES modules resolution
+import { db } from './src/db.ts'; // Using .ts for native node type stripping
 import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
@@ -611,8 +611,12 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[${new Date().toISOString()}] Server successfully started on port ${PORT}`);
+    console.log(`[${new Date().toISOString()}] Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
-startServer().catch(console.error);
+startServer().catch(err => {
+  console.error("FATAL ERROR DURING STARTUP:", err);
+  process.exit(1);
+});
