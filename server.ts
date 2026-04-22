@@ -12,15 +12,24 @@ import fs from 'fs';
 const JWT_SECRET = process.env.JWT_SECRET || 'onusandhan_super_secret_key_123';
 
 // Ensure uploads directory exists
-const uploadDir = path.join(process.cwd(), 'uploads');
+const uploadDir = path.join('/tmp', 'uploads-final'); // Use /tmp for everything on serverless
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// In-memory log buffer for remote debugging
+const serverLogs: string[] = [];
+function log(msg: string) {
+  const themedMsg = `[${new Date().toISOString()}] ${msg}`;
+  console.log(themedMsg);
+  serverLogs.push(themedMsg);
+  if (serverLogs.length > 200) serverLogs.shift();
 }
 
 // Multer Storage & Validation Configuration (Max Size: 10MB)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Standard uploads go to permanent storage
+    if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
@@ -72,6 +81,7 @@ const chunkUpload = multer({
 });
 
 async function startServer() {
+  log("Server initialization starting...");
   const app = express();
   const PORT = 3000;
 
@@ -100,13 +110,19 @@ async function startServer() {
   app.get('/api/health', (req, res) => {
     res.json({ 
       status: 'ok', 
-      version: 'v4.5', 
+      version: 'v4.11', 
       time: new Date().toISOString(),
-      mode: process.env.NODE_ENV || 'development' 
+      mode: process.env.NODE_ENV || 'production',
+      storage_ready: fs.existsSync(uploadDir)
     });
   });
 
-  app.use('/files', express.static(path.join(process.cwd(), 'uploads'))); // Use /files instead of /uploads
+  app.get('/api/logs', (req, res) => {
+     res.setHeader('Content-Type', 'text/plain');
+     res.send(serverLogs.join('\n'));
+  });
+
+  app.use('/files', express.static(uploadDir));
 
   // Diagnostic route
   app.get('/api/ping', (req, res) => {
@@ -114,14 +130,7 @@ async function startServer() {
     res.json({ status: 'live', host: req.headers.host });
   });
 
-  // Seed demo admin if not exists
-  const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@onusandhan.com');
-  if (!existingAdmin) {
-    const hash = bcrypt.hashSync('admin123', 10);
-    const info = db.prepare('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)').run('admin@onusandhan.com', hash, 'Admin');
-    db.prepare('INSERT INTO profiles (user_id, full_name, department, institution) VALUES (?, ?, ?, ?)').run(info.lastInsertRowid, 'System Admin', 'IT', 'Onusandhan');
-    console.log('Seeded demo admin: admin@onusandhan.com / admin123');
-  }
+  // API Routes Start Here
 
   // --- API ROUTES ---
 
@@ -281,6 +290,8 @@ async function startServer() {
       return res.status(400).json({ error: 'Missing metadata or chunk data' });
     }
     
+    log(`[Upload] Received chunk ${parseInt(chunkIndex) + 1}/${totalChunks} for id: ${uploadId}`);
+    
     // Use /tmp for chunks to avoid any disk issues on Cloud Run
     const tempDir = path.join('/tmp', 'uploads-chunks', uploadId);
 
@@ -293,12 +304,12 @@ async function startServer() {
       fs.copyFileSync(chunkFile.path, chunkPath);
       fs.unlinkSync(chunkFile.path);
 
-      const files = fs.readdirSync(tempDir);
-      console.log(`[Upload] Chunk ${parseInt(chunkIndex) + 1}/${totalChunks} saved for ${uploadId}. Progress: ${files.length}/${totalChunks}`);
+      const files = fs.readdirSync(tempDir).filter(f => f.startsWith('chunk-'));
+      log(`[Upload] Chunk ${parseInt(chunkIndex) + 1}/${totalChunks} saved for ${uploadId}. Total in temp: ${files.length}`);
       
       res.json({ success: true, received: chunkIndex });
-    } catch (error) {
-      console.error('[Upload] Chunk saving error:', error);
+    } catch (error: any) {
+      log(`[Upload] Chunk saving error: ${error.message}`);
       res.status(500).json({ error: 'Server failed to save chunk' });
     }
   });
@@ -306,8 +317,10 @@ async function startServer() {
   // Dedicated endpoint to assemble chunks - more robust than triggering on last chunk
   app.post('/api/upload/assemble', async (req: any, res: any) => {
     const { uploadId, totalChunks, filename } = req.body;
+    log(`[Upload] Assembly requested for ${filename} (${uploadId})`);
     
     if (!uploadId || !totalChunks || !filename) {
+      log(`[Upload] Assembly rejected: Missing metadata`);
       return res.status(400).json({ error: 'Missing assembly metadata' });
     }
 
@@ -315,69 +328,63 @@ async function startServer() {
     const total = parseInt(totalChunks);
 
     if (!fs.existsSync(tempDir)) {
+      log(`[Upload] Assembly rejected: tempDir ${tempDir} not found`);
       return res.status(404).json({ error: 'Upload segments not found. Please try again.' });
     }
 
     const lockFile = path.join(tempDir, 'reassembly.lock');
     if (fs.existsSync(lockFile)) {
-      console.log(`[Upload] Reassembly already in progress for ${uploadId}`);
+      log(`[Upload] Assembly busy for ${uploadId}`);
       return res.status(423).json({ error: 'Assembly in progress' });
     }
 
     try {
       const files = fs.readdirSync(tempDir).filter(f => f.startsWith('chunk-'));
       if (files.length < total) {
+        log(`[Upload] Assembly rejected: Incomplete pieces (${files.length}/${total})`);
         return res.status(400).json({ error: `Incomplete upload. Received ${files.length} of ${total} pieces.` });
       }
 
       fs.writeFileSync(lockFile, 'locked');
-      console.log(`[Upload] Starting explicit assembly for ${filename} (${total} chunks)...`);
+      log(`[Upload] Starting explicit assembly for ${filename} (${total} chunks)...`);
       
       const finalFilename = `final-${Date.now()}-${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       const finalPath = path.join(uploadDir, finalFilename);
       
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
       const writeStream = fs.createWriteStream(finalPath);
 
       try {
         for (let i = 0; i < total; i++) {
           const p = path.join(tempDir, `chunk-${i}`);
           if (fs.existsSync(p)) {
-            const chunkBuffer = fs.readFileSync(p);
-            writeStream.write(chunkBuffer);
+            writeStream.write(fs.readFileSync(p));
           } else {
-            throw new Error(`Critical piece ${i} missing during assembly`);
+            throw new Error(`Critical piece ${i} missing`);
           }
         }
         
         await new Promise<void>((resolve, reject) => {
-          writeStream.on('finish', () => resolve());
-          writeStream.on('error', (err) => {
-            console.error('[Upload] WriteStream error during assembly:', err);
-            reject(err);
-          });
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
           writeStream.end();
         });
 
         const stats = fs.statSync(finalPath);
-        console.log(`[Upload] Assembly successful: ${finalFilename} (${stats.size} bytes)`);
+        log(`[Upload] Assembly successful: ${finalFilename} (${stats.size} bytes)`);
 
         // Final cleanup
         try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch(e) {}
         
         return res.json({ url: `/files/${finalFilename}` });
       } catch (assembleError: any) {
+        log(`[Upload] Assembly processing failure: ${assembleError.message}`);
         if (writeStream) writeStream.end();
         if (fs.existsSync(finalPath)) try { fs.unlinkSync(finalPath); } catch(e) {}
-        console.error('[Upload] Assembly processing error:', assembleError);
         if (fs.existsSync(lockFile)) try { fs.unlinkSync(lockFile); } catch(e) {}
         return res.status(500).json({ error: `Assembly failed: ${assembleError.message}` });
       }
-    } catch (error) {
-      console.error('[Upload] Assembly controller error:', error);
+    } catch (error: any) {
+      log(`[Upload] Assembly fatal error: ${error.message}`);
       res.status(500).json({ error: 'Internal assembly failure' });
     }
   });
