@@ -24,9 +24,15 @@ function log(msg: string) {
   if (serverLogs.length > 500) serverLogs.shift();
 }
 
-log(">>> ONUSANDHAN SERVER BOOT v4.19 <<<");
+log(">>> ONUSANDHAN SERVER BOOT v4.23 <<<");
 
 const app = express();
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+});
+const upload = multer({ storage });
 
 // --- 1. GLOBAL LOGGING & MIDDELWARE ---
 app.use((req, res, next) => {
@@ -42,7 +48,7 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.get(['/api/health', '/api/health/'], (req, res) => {
   res.json({ 
     status: 'ok', 
-    version: 'v4.19', 
+    version: 'v4.23', 
     time: new Date().toISOString(),
     db_ready: !!globalDb,
     env: process.env.NODE_ENV || 'production'
@@ -79,7 +85,102 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-// --- 4. CORE API HANDLERS ---
+// --- 4. CHUNKED UPLOAD SYSTEM ---
+const chunkDir = path.join(uploadDir, 'chunks');
+if (!fs.existsSync(chunkDir)) fs.mkdirSync(chunkDir, { recursive: true });
+
+// Binary chunk upload (No token required for temporary fragments)
+app.post('/api/upload/chunk/binary', async (req, res) => {
+  const uploadId = req.headers['x-upload-id'] as string;
+  const chunkIndex = req.headers['x-chunk-index'] as string;
+  
+  if (!uploadId || chunkIndex === undefined) {
+    return res.status(400).json({ error: 'Missing headers' });
+  }
+
+  const userChunkDir = path.join(chunkDir, uploadId);
+  if (!fs.existsSync(userChunkDir)) fs.mkdirSync(userChunkDir, { recursive: true });
+  
+  const chunkPath = path.join(userChunkDir, `chunk-${chunkIndex}`);
+  const writeStream = fs.createWriteStream(chunkPath);
+  
+  req.pipe(writeStream);
+  
+  writeStream.on('finish', () => {
+    res.json({ success: true });
+  });
+  
+  writeStream.on('error', (err) => {
+    log(`Chunk Error: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  });
+});
+
+app.post('/api/upload/chunk/form', upload.single('chunk'), (req, res) => {
+  const { uploadId, chunkIndex, filename } = req.body;
+  if (!req.file || !uploadId || chunkIndex === undefined) {
+    return res.status(400).json({ error: 'Missing upload components' });
+  }
+  
+  const userChunkDir = path.join(chunkDir, uploadId);
+  if (!fs.existsSync(userChunkDir)) fs.mkdirSync(userChunkDir, { recursive: true });
+  
+  const chunkPath = path.join(userChunkDir, `chunk-${chunkIndex}`);
+  fs.renameSync(req.file.path, chunkPath);
+  
+  res.json({ success: true });
+});
+
+const assemblingLocks = new Set<string>();
+
+app.post('/api/upload/assemble', async (req, res) => {
+  const { uploadId, totalChunks, filename } = req.body;
+  if (!uploadId || !totalChunks || !filename) {
+    return res.status(400).json({ error: 'Missing assembly data' });
+  }
+
+  if (assemblingLocks.has(uploadId)) {
+    return res.status(423).json({ error: 'Assembly in progress' });
+  }
+
+  assemblingLocks.add(uploadId);
+  log(`Assembling ${filename} (${uploadId}) - ${totalChunks} pieces`);
+
+  try {
+    const userChunkDir = path.join(chunkDir, uploadId);
+    if (!fs.existsSync(userChunkDir)) {
+      throw new Error('Chunks directory not found');
+    }
+
+    const finalFileName = `${Date.now()}-${filename}`;
+    const finalPath = path.join(uploadDir, finalFileName);
+    const writeStream = fs.createWriteStream(finalPath);
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkPath = path.join(userChunkDir, `chunk-${i}`);
+      if (!fs.existsSync(chunkPath)) {
+        throw new Error(`Piece ${i} missing from set`);
+      }
+      const data = fs.readFileSync(chunkPath);
+      writeStream.write(data);
+      fs.unlinkSync(chunkPath);
+    }
+    writeStream.end();
+
+    await new Promise<void>((resolve) => writeStream.on('finish', () => resolve()));
+    fs.rmSync(userChunkDir, { recursive: true, force: true });
+    
+    log(`Successfully assembled: ${finalFileName}`);
+    res.json({ url: `/files/${finalFileName}` });
+  } catch (err: any) {
+    log(`Assembly FAILED: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  } finally {
+    assemblingLocks.delete(uploadId);
+  }
+});
+
+// --- 5. CORE API HANDLERS ---
 
 // Auth
 app.post('/api/auth/login', (req, res) => {
@@ -152,12 +253,6 @@ app.get('/api/drive', authenticateToken, (req: any, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
-});
-const upload = multer({ storage });
 
 app.post('/api/drive', authenticateToken, upload.single('file'), (req: any, res: any) => {
   if (!globalDb) return res.status(503).json({ error: 'System initializing' });
@@ -281,6 +376,19 @@ app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
   } catch (error: any) {
     console.error("AI Error:", error);
     res.status(500).json({ error: "AI failed to respond." });
+  }
+});
+
+app.delete('/api/delete-file', (req: any, res: any) => {
+  const { file_path } = req.query;
+  if (!file_path) return res.status(400).json({ error: 'Missing path' });
+  try {
+    const filename = path.basename(file_path as string);
+    const fullPath = path.join(uploadDir, filename);
+    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

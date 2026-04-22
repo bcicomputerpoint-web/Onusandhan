@@ -239,17 +239,25 @@ export default function AdminPanel() {
             setUploadStatus(progress === 100 ? `Finalizing pieces (${i+1}/${totalChunks})...` : `Uploading: ${progress}% (Piece ${i+1}/${totalChunks})`);
             
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout per chunk
+            const timeoutId = setTimeout(() => controller.abort(), 120000); 
 
-            const resp = await fetch('/api/upload/chunk/form', { 
+            const resp = await fetch('/api/upload/chunk/binary', { 
                method: 'POST', 
-               body: formData,
+               headers: {
+                 'Authorization': `Bearer ${localStorage.getItem('onusandhan_token')}`,
+                 'x-upload-id': uploadId,
+                 'x-chunk-index': i.toString(),
+                 'Content-Type': 'application/octet-stream'
+               },
+               body: chunk,
                signal: controller.signal
             });
             clearTimeout(timeoutId);
 
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             success = true;
+            // Small throttle between pieces for proxy stability
+            await new Promise(r => setTimeout(r, 150));
           } catch (err: any) {
             retryCount++;
             console.warn(`Admin: Chunk ${i} retry ${retryCount}...`, err);
@@ -266,7 +274,10 @@ export default function AdminPanel() {
         try {
           const assembleResp = await fetch('/api/upload/assemble', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('onusandhan_token')}`
+            },
             body: JSON.stringify({ uploadId, totalChunks, filename: file.name })
           });
           
