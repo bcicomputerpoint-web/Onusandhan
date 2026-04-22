@@ -90,9 +90,24 @@ const chunkUpload = multer({
 });
 
 async function startServer() {
-  log("Server initialization starting...");
+  log(">>> SERVER BOOT v4.13 STARTING <<<");
   const app = express();
   const PORT = 3000;
+
+  // IMMEDIATE RESPONSE ROUTES (Before ANY middleware)
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'ok', 
+      version: 'v4.13', 
+      node: process.version,
+      env: process.env.NODE_ENV || 'production'
+    });
+  });
+
+  app.get('/api/logs', (req, res) => {
+     res.setHeader('Content-Type', 'text/plain');
+     res.send(serverLogs.join('\n'));
+  });
 
   // Logging middleware
   app.use((req, res, next) => {
@@ -105,39 +120,6 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
   // Debug Headers for domain troubleshooting
-  app.get('/api/debug', (req, res) => {
-    res.json({ 
-      headers: req.headers, 
-      ip: req.ip,
-      url: req.url,
-      protocol: req.protocol,
-      secure: req.secure,
-      env: process.env.NODE_ENV
-    });
-  });
-
-  app.get('/api/health', (req, res) => {
-    let dbStatus = 'not_accessed';
-    try {
-      dbStatus = 'ready';
-    } catch (e: any) {
-      dbStatus = `error: ${e.message}`;
-    }
-
-    res.json({ 
-      status: 'ok', 
-      version: 'v4.12', 
-      time: new Date().toISOString(),
-      mode: process.env.NODE_ENV || 'production',
-      database: dbStatus,
-      storage_ready: fs.existsSync(uploadDir)
-    });
-  });
-
-  app.get('/api/logs', (req, res) => {
-     res.setHeader('Content-Type', 'text/plain');
-     res.send(serverLogs.join('\n'));
-  });
 
   app.use('/files', express.static(uploadDir));
 
