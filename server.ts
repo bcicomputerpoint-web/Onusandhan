@@ -24,19 +24,9 @@ function log(msg: string) {
   if (serverLogs.length > 500) serverLogs.shift();
 }
 
-log(">>> ONUSANDHAN SERVER BOOT v4.18 <<<");
+log(">>> ONUSANDHAN SERVER BOOT v4.19 <<<");
 
 const app = express();
-
-// --- 0. ROOT DIAGNOSTIC ---
-app.get('/', (req, res) => {
-  const distPath = path.join(process.cwd(), 'dist');
-  if (fs.existsSync(path.join(distPath, 'index.html'))) {
-    res.sendFile(path.join(distPath, 'index.html'));
-  } else {
-    res.send(`<h1>Onusandhan v4.18 LIVE</h1><p>Status: OK</p><p>Time: ${new Date().toISOString()}</p>`);
-  }
-});
 
 // --- 1. GLOBAL LOGGING & MIDDELWARE ---
 app.use((req, res, next) => {
@@ -52,7 +42,7 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.get(['/api/health', '/api/health/'], (req, res) => {
   res.json({ 
     status: 'ok', 
-    version: 'v4.18', 
+    version: 'v4.19', 
     time: new Date().toISOString(),
     db_ready: !!globalDb,
     env: process.env.NODE_ENV || 'production'
