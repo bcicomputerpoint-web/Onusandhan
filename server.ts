@@ -62,8 +62,21 @@ async function startServer() {
   });
 
   app.use(cors({ origin: true, credentials: true }));
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+  // Debug Headers for domain troubleshooting
+  app.get('/api/debug', (req, res) => {
+    res.json({ 
+      headers: req.headers, 
+      ip: req.ip,
+      url: req.url,
+      protocol: req.protocol,
+      secure: req.secure,
+      env: process.env.NODE_ENV
+    });
+  });
+
   app.use('/files', express.static(path.join(process.cwd(), 'uploads'))); // Use /files instead of /uploads
 
   // Diagnostic route
@@ -219,6 +232,52 @@ async function startServer() {
       console.error('OAuth error:', error);
       res.send('<p>Authentication failed. Please close this window and try again.</p>');
     }
+  });
+
+  // CHUNKED UPLOAD SYSTEM (v4) - FormData based for maximum proxy compatibility
+  app.post('/api/upload/chunk/form', upload.single('chunk'), async (req: any, res: any) => {
+    const { chunkIndex, totalChunks, filename, uploadId } = req.body;
+    const chunkFile = req.file;
+
+    if (!uploadId || !chunkFile) {
+      return res.status(400).json({ error: 'Missing metadata or chunk data' });
+    }
+
+    const tempDir = path.join(uploadDir, 'temp', uploadId);
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const chunkPath = path.join(tempDir, `chunk-${chunkIndex}`);
+    fs.renameSync(chunkFile.path, chunkPath);
+
+    console.log(`Received form-chunk ${chunkIndex}/${totalChunks} for ${filename}`);
+
+    if (parseInt(chunkIndex) === parseInt(totalChunks) - 1) {
+      const finalFilename = `fchunked-${Date.now()}-${filename}`;
+      const finalPath = path.join(uploadDir, finalFilename);
+      const writeStream = fs.createWriteStream(finalPath);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const p = path.join(tempDir, `chunk-${i}`);
+        if (fs.existsSync(p)) {
+          const b = fs.readFileSync(p);
+          writeStream.write(b);
+          fs.unlinkSync(p);
+        }
+      }
+      writeStream.end();
+      
+      // Cleanup temp dir in background
+      setTimeout(() => {
+        try { if(fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true }); } catch(e) {}
+      }, 5000);
+
+      console.log('Reassembled form-chunked file:', finalFilename);
+      return res.json({ url: `/files/${finalFilename}` });
+    }
+
+    res.json({ success: true });
   });
 
   // CHUNKED UPLOAD SYSTEM (v3) - The ultimate solution for restrictive firewalls

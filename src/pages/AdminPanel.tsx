@@ -213,9 +213,7 @@ export default function AdminPanel() {
     
     setUploadState('uploading');
     try {
-      console.log("Admin: Executing High-Reliability Chunked Upload...");
-      
-      const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+      const CHUNK_SIZE = 1024 * 1024;
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
       let downloadUrl = '';
@@ -224,48 +222,30 @@ export default function AdminPanel() {
         const start = i * CHUNK_SIZE;
         const end = Math.min(file.size, start + CHUNK_SIZE);
         const chunk = file.slice(start, end);
+        const formData = new FormData();
+        formData.append('chunkIndex', i.toString());
+        formData.append('totalChunks', totalChunks.toString());
+        formData.append('filename', file.name);
+        formData.append('uploadId', uploadId);
+        formData.append('chunk', chunk);
 
-        // Convert slice to base64
-        const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]);
-          };
-          reader.readAsDataURL(chunk);
-        });
-
-        const response = await fetch('/api/upload/chunk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chunkIndex: i,
-            totalChunks,
-            filename: file.name,
-            uploadId,
-            data: base64Data
-          })
-        });
-
-        if (!response.ok) throw new Error(`Chunk ${i+1} failed`);
-        
-        const res = await response.json();
-        if (res.url) downloadUrl = res.url;
-        
-        const progress = Math.round(((i + 1) / totalChunks) * 100);
-        console.log(`Chunked Upload Progress: ${progress}%`);
+        let retryCount = 0;
+        let success = false;
+        while (retryCount < 3 && !success) {
+          try {
+            const resp = await fetch('/api/upload/chunk/form', { method: 'POST', body: formData });
+            if (!resp.ok) throw new Error(`${resp.status}`);
+            const res = await resp.json();
+            if (res.url) downloadUrl = res.url;
+            success = true;
+          } catch {
+            retryCount++;
+            await new Promise(r => setTimeout(r, 1000 * retryCount));
+            if (retryCount === 3) throw new Error("Chunk failed after retries");
+          }
+        }
       }
-
-      console.log("Upload complete, saving to database...");
-      const docData = {
-        title: file.name,
-        item_type: 'Document',
-        category: selectedCategory,
-        file_path: downloadUrl,
-        user_id: selectedUserId,
-        created_at: Date.now(),
-        visibility: 'Private'
-      };
+      const docData = { title: file.name, item_type: 'Document', category: selectedCategory, file_path: downloadUrl, user_id: selectedUserId, created_at: Date.now(), visibility: 'Private' };
       
       await addDoc(collection(db, `users/${selectedUserId}/drive_items`), docData);
       

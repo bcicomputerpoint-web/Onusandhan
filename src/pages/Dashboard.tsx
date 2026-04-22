@@ -83,73 +83,47 @@ export default function Dashboard() {
 
    const handleFileUpload = async () => {
       if (!user?.uid || !previewContext) return;
-      
       const { category, file } = previewContext;
       setUploadingState(prev => ({ ...prev, [category]: true }));
       setUploadStatus('0%');
-      
       try {
-         console.log("Dashboard: Executing High-Reliability Chunked Upload...");
-         
-         const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+         const CHUNK_SIZE = 1024 * 1024;
          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
          const uploadId = Date.now().toString() + Math.random().toString(36).substring(2);
          let downloadUrl = '';
-
          for (let i = 0; i < totalChunks; i++) {
             const start = i * CHUNK_SIZE;
             const end = Math.min(file.size, start + CHUNK_SIZE);
             const chunk = file.slice(start, end);
-
-            const base64Data = await new Promise<string>((resolve) => {
-               const reader = new FileReader();
-               reader.onload = () => {
-                  const result = reader.result as string;
-                  resolve(result.split(',')[1]);
-               };
-               reader.readAsDataURL(chunk);
-            });
-
-            const response = await fetch('/api/upload/chunk', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({
-                  chunkIndex: i,
-                  totalChunks,
-                  filename: file.name,
-                  uploadId,
-                  data: base64Data
-               })
-            });
-
-            if (!response.ok) throw new Error(`Chunk ${i+1}/${totalChunks} failed`);
-            
-            const progress = Math.round(((i + 1) / totalChunks) * 100);
-            setUploadStatus(`Uploading: ${progress}%`);
-
-            const res = await response.json();
-            if (res.url) downloadUrl = res.url;
+            const formData = new FormData();
+            formData.append('chunkIndex', i.toString());
+            formData.append('totalChunks', totalChunks.toString());
+            formData.append('filename', file.name);
+            formData.append('uploadId', uploadId);
+            formData.append('chunk', chunk);
+            let retryCount = 0;
+            let success = false;
+            while (retryCount < 3 && !success) {
+               try {
+                  setUploadStatus(`Uploading: ${Math.round((i / totalChunks) * 100)}%`);
+                  const resp = await fetch('/api/upload/chunk/form', { method: 'POST', body: formData });
+                  if (!resp.ok) throw new Error(`${resp.status}`);
+                  const res = await resp.json();
+                  if (res.url) downloadUrl = res.url;
+                  success = true;
+               } catch {
+                  retryCount++;
+                  await new Promise(r => setTimeout(r, 1000 * retryCount));
+               }
+            }
          }
-
-         setUploadStatus('Saving record...');
-         const docData = {
-           title: file.name,
-           item_type: 'Document',
-           category,
-           file_path: downloadUrl,
-           user_id: user.uid,
-           created_at: Date.now(),
-           visibility: 'Private'
-         };
-         
+         const docData = { title: file.name, item_type: 'Document', category, file_path: downloadUrl, user_id: user.uid, created_at: Date.now(), visibility: 'Private' };
          const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
-
-         setItems(prev => [{ id: newDoc.id, ...docData }, ...prev]);
+         setItems((prev: any[]) => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
-         alert("Success! File uploaded successfully.");
+         alert("✓ File Uploaded");
       } catch (e: any) {
-         console.error('Final Dashboard Upload Error:', e);
-         alert(`Upload Failed: ${e.message}\n\nNote: If file is very large, try a smaller document.`);
+         alert(`Error: ${e.message}`);
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
          setUploadStatus('');
