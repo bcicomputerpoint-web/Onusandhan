@@ -7,6 +7,7 @@ import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { createServer as createViteServer } from 'vite';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,10 +25,11 @@ function log(msg: string) {
   if (serverLogs.length > 500) serverLogs.shift();
 }
 
-log(">>> ONUSANDHAN SERVER BOOT v4.24 <<<");
+log(">>> ONUSANDHAN SERVER BOOT v4.25 <<<");
 const INSTANCE_ID = Math.random().toString(36).substring(2, 7).toUpperCase();
 
-const app = express();
+async function startServer() {
+  const app = express();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -88,7 +90,7 @@ app.get(['/api/health', '/api/health/'], (req, res) => {
 
   res.json({ 
     status: 'ok', 
-    version: 'v4.24.1', 
+    version: 'v4.25', 
     instance: INSTANCE_ID,
     storage_writable: writable,
     time: new Date().toISOString(),
@@ -423,23 +425,35 @@ app.get('/api/admin/stats', authenticateToken, (req: any, res) => {
 
 // --- 5. STATIC FILES & CATCH-ALL ---
 app.use('/files', express.static(uploadDir));
-const distPath = path.join(process.cwd(), 'dist');
 
-if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
-    res.sendFile(path.join(distPath, 'index.html'));
+if (process.env.NODE_ENV !== 'production') {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
   });
+  app.use(vite.middlewares);
 } else {
-  app.get('*', (req, res) => {
-    if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
-    res.send(`<h1>Onusandhan v4.18</h1><p>API Server is live, but UI build is missing. Run build.</p>`);
-  });
+  const distPath = path.join(process.cwd(), 'dist');
+  if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    app.get('*', (req, res) => {
+      if (req.url.startsWith('/api/')) return res.status(404).json({ error: 'API not found' });
+      res.send(`<h1>Onusandhan v4.25</h1><p>API Server is live, but UI build is missing. Run build.</p>`);
+    });
+  }
 }
 
 // --- 6. START ---
 app.listen(PORT, '0.0.0.0', () => {
-  log(`Server v4.24 [${INSTANCE_ID}] LISTENING on 0.0.0.0:${PORT}`);
+  log(`Server v4.25 [${INSTANCE_ID}] LISTENING on 0.0.0.0:${PORT}`);
   initDb();
 });
+
+}
+
+startServer();

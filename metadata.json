@@ -1,6 +1,6 @@
 {
-  "name": "Onusandhan v4.24 MULTI-INST",
-  "description": "Research document management platform v4.24 with Multi-Instance tracking for Published URLs.",
+  "name": "Onusandhan v4.25 UI-RESTORE",
+  "description": "Research document management platform v4.25 with UI restoration and Vite middleware.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
