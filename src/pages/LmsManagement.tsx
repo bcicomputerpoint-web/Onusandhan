@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
 import { collection, query, getDocs, addDoc, doc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../lib/firebase';
 import { 
   Library, Plus, Search, Filter, MoreVertical, 
   Users, BookOpen, Clock, Trash2, Edit2, 

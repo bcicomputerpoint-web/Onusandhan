@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, useLanguage } from '../App';
 import { doc, getDoc, collection, query, getDocs, orderBy, where, addDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../lib/firebase';
 import { 
   ChevronLeft, BookOpen, Video, FileText, 
   CheckCircle2, PlayCircle, Download, 

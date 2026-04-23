@@ -6,41 +6,49 @@
       "type": "object",
       "properties": {
         "email": { "type": "string", "format": "email" },
+        "password_hash": { "type": "string" },
         "role": { "type": "string", "enum": ["Admin", "Scholar", "Student", "Centre"] },
-        "createdAt": { "type": "number" }
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["email", "role", "createdAt"]
+      "required": ["email", "password_hash", "role", "created_at"]
     },
     "Profile": {
       "title": "User Profile",
       "description": "Public and private profile details for academic identity",
       "type": "object",
       "properties": {
+        "user_id": { "type": "string" },
         "full_name": { "type": "string" },
-        "photo_url": { "type": "string" },
         "institution": { "type": "string" },
         "department": { "type": "string" },
         "research_area": { "type": "string" },
-        "mobile": { "type": "string" }
+        "orcid": { "type": "string" },
+        "bio": { "type": "string" },
+        "session": { "type": "string" },
+        "university": { "type": "string" },
+        "program": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["full_name"]
+      "required": ["user_id", "full_name"]
     },
     "DriveItem": {
       "title": "Drive Item",
       "description": "Documents or links managed by the user",
       "type": "object",
       "properties": {
+        "user_id": { "type": "string" },
         "title": { "type": "string" },
         "item_type": { "type": "string", "enum": ["Document", "Link"] },
         "category": { "type": "string" },
+        "authors": { "type": "string" },
+        "abstract": { "type": "string" },
+        "publish_year": { "type": "number" },
         "file_path": { "type": "string" },
         "external_url": { "type": "string" },
-        "abstract": { "type": "string" },
-        "user_id": { "type": "string" },
-        "created_at": { "type": "number" },
-        "visibility": { "type": "string", "enum": ["Private", "Public"] }
+        "visibility": { "type": "string", "enum": ["Private", "Public"] },
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["title", "item_type", "category", "user_id", "created_at", "visibility"]
+      "required": ["user_id", "title", "item_type", "category", "created_at", "visibility"]
     },
     "Course": {
       "title": "Academic Course",
@@ -50,38 +58,34 @@
         "title": { "type": "string" },
         "description": { "type": "string" },
         "instructor_id": { "type": "string" },
-        "thumbnail_url": { "type": "string" },
-        "category": { "type": "string" },
-        "level": { "type": "string", "enum": ["School", "College", "PhD"] },
-        "created_at": { "type": "number" }
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["title", "instructor_id", "level", "created_at"]
+      "required": ["title", "instructor_id", "created_at"]
     },
     "Lesson": {
       "title": "Course Lesson",
       "description": "Specific instructional unit within a module",
       "type": "object",
       "properties": {
+        "course_id": { "type": "string" },
         "title": { "type": "string" },
-        "content_type": { "type": "string", "enum": ["Video", "PDF", "Quiz"] },
-        "content_url": { "type": "string" },
-        "duration_mins": { "type": "number" },
-        "order": { "type": "number" }
+        "content": { "type": "string" },
+        "video_url": { "type": "string" },
+        "order_index": { "type": "number" }
       },
-      "required": ["title", "content_type", "order"]
+      "required": ["course_id", "title", "order_index"]
     },
     "Assignment": {
       "title": "Academic Assignment",
       "description": "Task for students to complete and submit",
       "type": "object",
       "properties": {
+        "course_id": { "type": "string" },
         "title": { "type": "string" },
         "description": { "type": "string" },
-        "due_date": { "type": "number" },
-        "max_points": { "type": "number" },
-        "course_id": { "type": "string" }
+        "due_date": { "type": "string", "format": "date-time" }
       },
-      "required": ["title", "due_date", "course_id"]
+      "required": ["course_id", "title"]
     },
     "Enrollment": {
       "title": "Course Enrollment",
@@ -90,11 +94,9 @@
       "properties": {
         "user_id": { "type": "string" },
         "course_id": { "type": "string" },
-        "progress": { "type": "number" },
-        "enrolled_at": { "type": "number" },
-        "status": { "type": "string", "enum": ["Active", "Completed"] }
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["user_id", "course_id", "enrolled_at", "status"]
+      "required": ["user_id", "course_id", "created_at"]
     },
     "Submission": {
       "title": "Assignment Submission",
@@ -102,15 +104,13 @@
       "type": "object",
       "properties": {
         "assignment_id": { "type": "string" },
-        "course_id": { "type": "string" },
         "user_id": { "type": "string" },
-        "user_name": { "type": "string" },
-        "submission_url": { "type": "string" },
-        "submitted_at": { "type": "number" },
-        "status": { "type": "string", "enum": ["Submitted", "Graded"] },
-        "grade": { "type": "number" }
+        "file_path": { "type": "string" },
+        "submitted_at": { "type": "string", "format": "date-time" },
+        "feedback": { "type": "string" },
+        "grade": { "type": "string" }
       },
-      "required": ["assignment_id", "course_id", "user_id", "submission_url", "status"]
+      "required": ["assignment_id", "user_id", "submitted_at"]
     }
   },
   "firestore": {
@@ -118,11 +118,11 @@
       "schema": "User",
       "description": "Base user document"
     },
-    "/users/{userId}/profile/info": {
+    "/profiles/{profileId}": {
       "schema": "Profile",
-      "description": "Single profile info document"
+      "description": "User profile details indexed by user_id or random ID"
     },
-    "/users/{userId}/drive_items/{itemId}": {
+    "/drive_items/{itemId}": {
       "schema": "DriveItem",
       "description": "List of user docs and links"
     },
@@ -130,11 +130,11 @@
       "schema": "Course",
       "description": "Top-level course metadata"
     },
-    "/courses/{courseId}/lessons/{lessonId}": {
+    "/lessons/{lessonId}": {
       "schema": "Lesson",
       "description": "Lessons organized within a course"
     },
-    "/courses/{courseId}/assignments/{assignmentId}": {
+    "/assignments/{assignmentId}": {
       "schema": "Assignment",
       "description": "Assignments directly under a course"
     },

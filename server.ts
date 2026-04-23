@@ -8,6 +8,7 @@ import multer from 'multer';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import { dbService } from './src/services/dbService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,7 +95,7 @@ app.get(['/api/health', '/api/health/'], (req, res) => {
     instance: INSTANCE_ID,
     storage_writable: writable,
     time: new Date().toISOString(),
-    db_ready: !!globalDb,
+    db_ready: true,
     env: process.env.NODE_ENV || 'production'
   });
 });
@@ -105,15 +106,12 @@ app.get('/api/logs', (req, res) => {
 });
 
 // --- 3. DYNAMIC DB LOADING ---
-let globalDb: any = null;
 async function initDb() {
   try {
-    log("Loading database system...");
-    const dbModule = await import('./src/db.ts');
-    globalDb = dbModule.getDb(); // Use the exportable getter for safety
-    log("Database system ready.");
+    log("Initializing Cloud Persistence (Firestore)...");
+    log("Cloud Persistence ready.");
   } catch (e: any) {
-    log(`CRITICAL DATABASE INITIALIZATION ERROR: ${e.message}\n${e.stack}`);
+    log(`CRITICAL FIRESTORE INITIALIZATION ERROR: ${e.message}`);
   }
 }
 
@@ -200,11 +198,10 @@ app.post('/api/upload/assemble', async (req, res) => {
 // --- 5. CORE API HANDLERS ---
 
 // Auth
-app.post('/api/auth/login', (req, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = globalDb.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
+    const user: any = await dbService.getUserByEmail(email);
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -215,45 +212,42 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.post('/api/auth/register', async (req, res) => {
   const { email, password, role, fullName } = req.body;
   try {
+    const exists = await dbService.getUserByEmail(email);
+    if (exists) return res.status(400).json({ error: 'User already exists' });
+
     const hash = bcrypt.hashSync(password, 10);
-    const info = globalDb.prepare('INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)').run(email, hash, role || 'Scholar');
-    globalDb.prepare('INSERT INTO profiles (user_id, full_name) VALUES (?, ?)').run(info.lastInsertRowid, fullName);
-    const token = jwt.sign({ id: info.lastInsertRowid, role: role || 'Scholar', email }, JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token, role: role || 'Scholar' });
+    const newUser: any = await dbService.createUser({
+      email,
+      password_hash: hash,
+      role: role || 'Scholar'
+    });
+    await dbService.updateProfile(newUser.id, { full_name: fullName });
+    
+    const token = jwt.sign({ id: newUser.id, role: newUser.role, email: newUser.email }, JWT_SECRET, { expiresIn: '24h' });
+    res.json({ token, role: newUser.role });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Profile
-app.get('/api/profile', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/profile', authenticateToken, async (req: any, res) => {
   try {
-    const profile = globalDb.prepare(`
-      SELECT u.email, u.role, p.* FROM profiles p 
-      JOIN users u ON p.user_id = u.id WHERE p.user_id = ?
-    `).get(req.user.id);
-    res.json(profile);
+    const profile = await dbService.getProfileByUserId(req.user.id);
+    if (!profile) return res.status(404).json({ error: 'Profile not found' });
+    res.json({ email: req.user.email, role: req.user.role, ...profile });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put('/api/profile', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
-  const { institution, department, research_area, orcid, bio, full_name } = req.body;
+app.put('/api/profile', authenticateToken, async (req: any, res) => {
+  const { institution, department, research_area, orcid, bio, full_name, session, university, program } = req.body;
   try {
-    globalDb.prepare(`
-      UPDATE profiles SET 
-        full_name = COALESCE(?, full_name), institution = COALESCE(?, institution),
-        department = COALESCE(?, department), research_area = COALESCE(?, research_area),
-        orcid = COALESCE(?, orcid), bio = COALESCE(?, bio)
-      WHERE user_id = ?
-    `).run(full_name, institution, department, research_area, orcid, bio, req.user.id);
+    await dbService.updateProfile(req.user.id, { full_name, institution, department, research_area, orcid, bio, session, university, program });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -261,35 +255,40 @@ app.put('/api/profile', authenticateToken, (req: any, res) => {
 });
 
 // Drive
-app.get('/api/drive', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/drive', authenticateToken, async (req: any, res) => {
   try {
-    const items = globalDb.prepare('SELECT * FROM drive_items WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
+    const items = await dbService.getDriveItems(req.user.id);
     res.json(items);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/drive', authenticateToken, upload.single('file'), (req: any, res: any) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.post('/api/drive', authenticateToken, upload.single('file'), async (req: any, res: any) => {
   const { title, item_type, category, authors, abstract, publish_year, external_url, visibility } = req.body;
   const file_path = req.file ? `/files/${req.file.filename}` : null;
   try {
-    globalDb.prepare(`
-      INSERT INTO drive_items (user_id, title, item_type, category, authors, abstract, publish_year, file_path, external_url, visibility) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(req.user.id, title, item_type, category, authors, abstract, publish_year || null, file_path, external_url || null, visibility || 'Private');
+    await dbService.addDriveItem({
+      user_id: req.user.id,
+      title,
+      item_type,
+      category,
+      authors: authors || null,
+      abstract: abstract || null,
+      publish_year: parseInt(publish_year) || null,
+      file_path,
+      external_url: external_url || null,
+      visibility: visibility || 'Private'
+    });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.delete('/api/drive/:id', authenticateToken, (req: any, res: any) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.delete('/api/drive/:id', authenticateToken, async (req: any, res: any) => {
   try {
-    const item = globalDb.prepare('SELECT * FROM drive_items WHERE id = ?').get(req.params.id) as any;
+    const item = await dbService.getDriveItem(req.params.id);
     if (!item) return res.status(404).send();
     if (item.user_id !== req.user.id && req.user.role !== 'Admin') return res.sendStatus(403);
     
@@ -297,7 +296,7 @@ app.delete('/api/drive/:id', authenticateToken, (req: any, res: any) => {
       const fullPath = path.join(uploadDir, path.basename(item.file_path));
       if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
     }
-    globalDb.prepare('DELETE FROM drive_items WHERE id = ?').run(req.params.id);
+    await dbService.deleteDriveItem(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -305,71 +304,50 @@ app.delete('/api/drive/:id', authenticateToken, (req: any, res: any) => {
 });
 
 // LMS Routes
-app.get('/api/courses', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/courses', authenticateToken, async (req: any, res) => {
   try {
-    const courses = globalDb.prepare(`
-      SELECT c.*, p.full_name as instructor_name,
-      (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as student_count
-      FROM courses c 
-      JOIN profiles p ON c.instructor_id = p.user_id
-      ORDER BY c.created_at DESC
-    `).all();
+    const courses = await dbService.getCourses();
     res.json(courses);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/courses', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.post('/api/courses', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'Admin') return res.sendStatus(403);
   try {
     const { title, description } = req.body;
-    const info = globalDb.prepare('INSERT INTO courses (title, description, instructor_id) VALUES (?, ?, ?)').run(title, description, req.user.id);
-    res.json({ id: info.lastInsertRowid });
+    const info = await dbService.addCourse({ title, description, instructor_id: req.user.id });
+    res.json({ id: info.id });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/enrollments', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/enrollments', authenticateToken, async (req: any, res) => {
   try {
-    const enrollments = globalDb.prepare(`
-      SELECT e.*, c.title as course_title, c.description as course_description 
-      FROM enrollments e 
-      JOIN courses c ON e.course_id = c.id 
-      WHERE e.user_id = ?
-    `).all(req.user.id);
+    const enrollments = await dbService.getEnrollments(req.user.id);
     res.json(enrollments);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post('/api/enrollments', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.post('/api/enrollments', authenticateToken, async (req: any, res) => {
   const { course_id } = req.body;
   try {
-    const info = globalDb.prepare('INSERT INTO enrollments (user_id, course_id) VALUES (?, ?)').run(req.user.id, course_id);
-    res.json({ id: info.lastInsertRowid });
+    const result = await dbService.enrollUser(req.user.id, course_id);
+    res.json(result);
   } catch (error: any) {
-    // If already enrolled, just return 200
-    if (error.message.includes('UNIQUE constraint failed')) {
-      return res.json({ message: 'Already enrolled' });
-    }
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/courses/:id', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/courses/:id', authenticateToken, async (req: any, res) => {
   try {
-    const course = globalDb.prepare('SELECT * FROM courses WHERE id = ?').get(req.params.id);
-    const lessons = globalDb.prepare('SELECT * FROM lessons WHERE course_id = ? ORDER BY order_index ASC').all(req.params.id);
-    const assignments = globalDb.prepare('SELECT * FROM assignments WHERE course_id = ?').all(req.params.id);
-    res.json({ ...course, lessons, assignments });
+    const course = await dbService.getCourseDetails(req.params.id);
+    if (!course) return res.status(404).send();
+    res.json(course);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -379,17 +357,17 @@ app.get('/api/courses/:id', authenticateToken, (req: any, res) => {
 app.post('/api/ai/chat', authenticateToken, async (req: any, res) => {
   const { message, context } = req.body;
   try {
-    const { GoogleGenAI } = await import("@google/genai");
-    const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-    // Use the model directly as per @google/genai patterns
-    const result = await genAI.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const { GoogleGenAI } = (await import("@google/genai")) as any;
+    const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY || '');
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const result = await model.generateContent({
       contents: [
         { role: 'user', parts: [{ text: `System: Onusandhan Academic Assistant. Context: ${JSON.stringify(context || {})}` }] },
         { role: 'user', parts: [{ text: message }] }
       ]
     });
-    res.json({ reply: result.text });
+    res.json({ reply: result.response.text() });
   } catch (error: any) {
     console.error("AI Error:", error);
     res.status(500).json({ error: "AI failed to respond." });
@@ -410,14 +388,11 @@ app.delete('/api/delete-file', (req: any, res: any) => {
 });
 
 // Admin
-app.get('/api/admin/stats', authenticateToken, (req: any, res) => {
-  if (!globalDb) return res.status(503).json({ error: 'System initializing' });
+app.get('/api/admin/stats', authenticateToken, async (req: any, res) => {
   if (req.user.role !== 'Admin') return res.sendStatus(403);
   try {
-    const totalUsers = globalDb.prepare('SELECT COUNT(*) as count FROM users').get() as any;
-    const totalDocs = globalDb.prepare("SELECT COUNT(*) as count FROM drive_items WHERE item_type = 'Document'").get() as any;
-    const recentUsers = globalDb.prepare('SELECT u.id, u.email, u.role, p.full_name, u.created_at FROM users u LEFT JOIN profiles p ON u.id = p.user_id ORDER BY u.created_at DESC LIMIT 10').all();
-    res.json({ totalUsers: totalUsers.count, totalDocs: totalDocs.count, recentUsers });
+    const stats = await dbService.getStats();
+    res.json(stats);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

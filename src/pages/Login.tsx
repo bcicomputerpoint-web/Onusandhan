@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, googleProvider, db } from '../firebase';
+import { doc, getDoc, setDoc, collection, addDoc, query, where, getDocs, limit, serverTimestamp } from 'firebase/firestore';
+import { auth, googleProvider, db } from '../lib/firebase';
 import { Button, Input } from '../components/ui';
 import { PlayCircle } from 'lucide-react';
 
@@ -29,9 +29,10 @@ export default function Login() {
          await setDoc(userRef, {
             email: result.user.email,
             role: role,
-            createdAt: Date.now()
+            created_at: serverTimestamp()
          });
-         await setDoc(doc(db, `users/${result.user.uid}/profile`, 'info'), {
+         await addDoc(collection(db, 'profiles'), {
+            user_id: result.user.uid,
             full_name: result.user.displayName || (isAdminEmail ? 'System Administrator' : 'Anonymous Scholar')
          });
       } else {

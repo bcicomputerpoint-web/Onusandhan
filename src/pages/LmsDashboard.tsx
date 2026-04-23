@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, useLanguage } from '../App';
 import { collection, query, where, getDocs, doc, getDoc, limit, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../lib/firebase';
 import { 
   GraduationCap, BookOpen, Clock, Calendar, 
   ArrowRight, PlayCircle, Star, Target,

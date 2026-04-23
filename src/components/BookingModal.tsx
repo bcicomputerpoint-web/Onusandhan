@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, CheckCircle, Loader2 } from 'lucide-react';
-import { db } from '../firebase';
+import { db } from '../lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 
 interface BookingModalProps {

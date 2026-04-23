@@ -4,9 +4,9 @@ import { ProfileCard, SummaryCard, DataTable, LinkForm, ConfirmModal } from '../
 import { Users, FileText, CheckCircle, UserPlus, Shield, Activity, Eye, Check, X as XIcon, UploadCloud, Link as LinkIcon, Trash2, ExternalLink, Edit2, TrendingUp, Youtube, PlayCircle } from 'lucide-react';
 import { Button } from '../components/ui';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, collectionGroup, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc, setDoc, where, limit } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage, auth } from '../firebase';
+import { db, storage, auth } from '../lib/firebase';
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -31,18 +31,19 @@ export default function AdminPanel() {
   const fetchStats = async () => {
     try {
       const usersQuery = await getDocs(collection(db, 'users'));
-      const itemsQuery = await getDocs(collectionGroup(db, 'drive_items'));
+      const itemsQuery = await getDocs(collection(db, 'drive_items'));
       const bookingsQuery = await getDocs(collection(db, 'booking_queries'));
       
       const users = usersQuery.docs.map(d => ({ id: d.id, ...d.data() }));
-      const items = itemsQuery.docs.map(d => ({ id: d.id, ...d.data(), parentPath: d.ref.parent.parent?.path }));
+      const items = itemsQuery.docs.map(d => ({ id: d.id, ...d.data() }));
       const bookingsList = bookingsQuery.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Fetch profiles for users to show actual names instead of email
       const recentUsers = await Promise.all(users.map(async (u: any) => {
         try {
-          const profileDoc = await getDoc(doc(db, `users/${u.id}/profile`, 'info'));
-          const profileData = profileDoc.exists() ? profileDoc.data() : {};
+          const profileQ = query(collection(db, 'profiles'), where('user_id', '==', u.id), limit(1));
+          const profileSnap = await getDocs(profileQ);
+          const profileData = !profileSnap.empty ? profileSnap.docs[0].data() : {};
           return { 
             ...u, 
             full_name: profileData.full_name || u.email,
@@ -89,10 +90,11 @@ export default function AdminPanel() {
       await setDoc(doc(db, 'users', tempId), {
         email: newUserForm.email,
         role: newUserForm.role,
-        createdAt: Date.now()
+        created_at: Date.now()
       });
 
-      await setDoc(doc(db, `users/${tempId}/profile`, 'info'), {
+      await addDoc(collection(db, 'profiles'), {
+        user_id: tempId,
         full_name: newUserForm.name,
         mobile: newUserForm.mobile,
         institution: newUserForm.university,
@@ -141,9 +143,18 @@ export default function AdminPanel() {
       });
       
       // Update profile doc (full_name)
-      await updateDoc(doc(db, `users/${userToEdit.id}/profile`, 'info'), {
-        full_name: editFormData.name
-      });
+      const q = query(collection(db, 'profiles'), where('user_id', '==', userToEdit.id), limit(1));
+      const profileSnap = await getDocs(q);
+      if (!profileSnap.empty) {
+        await updateDoc(doc(db, 'profiles', profileSnap.docs[0].id), {
+          full_name: editFormData.name
+        });
+      } else {
+        await addDoc(collection(db, 'profiles'), {
+          user_id: userToEdit.id,
+          full_name: editFormData.name
+        });
+      }
 
       await fetchStats();
       setUserToEdit(null);
@@ -162,7 +173,12 @@ export default function AdminPanel() {
       // Note: This only deletes Firestore records. 
       // Real auth deletion requires Admin SDK which isn't available on client.
       await deleteDoc(doc(db, 'users', userToDelete.id));
-      await deleteDoc(doc(db, `users/${userToDelete.id}/profile`, 'info'));
+      
+      const q = query(collection(db, 'profiles'), where('user_id', '==', userToDelete.id));
+      const profileSnap = await getDocs(q);
+      profileSnap.forEach(async (d) => {
+        await deleteDoc(doc(db, 'profiles', d.id));
+      });
       
       // Optionally could link to cloud function here
       await fetchStats();
@@ -192,7 +208,7 @@ export default function AdminPanel() {
          created_at: Date.now(),
          visibility: 'Private'
        };
-       await addDoc(collection(db, `users/${selectedUserId}/drive_items`), linkData);
+       await addDoc(collection(db, 'drive_items'), linkData);
        setUploadState('success');
        await fetchStats();
        setTimeout(() => setUploadState('idle'), 3000);

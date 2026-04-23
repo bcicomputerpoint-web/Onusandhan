@@ -1,8 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import React, { useState, createContext, useContext, useEffect } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, getDocFromCache, getDocFromServer } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { doc, getDoc, getDocs, query, collection, where, limit, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
 import { Language, translations, TranslationKey } from './lib/translations';
 
 import Home from './pages/Home';
@@ -95,45 +95,48 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Initial health check to verify Firebase connectivity
-    const testConnection = async () => {
-      try {
-        await getDocFromServer(doc(db, 'system', 'health'));
-      } catch (error: any) {
-        if(error?.message?.includes('offline')) {
-          console.warn("Firestore appears to be offline. Verify your Firebase configuration.");
-        }
-      }
-    };
-    testConnection();
-
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        try {
-          // Fetch user role from Firestore
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          const pDoc = await getDoc(doc(db, `users/${firebaseUser.uid}/profile`, 'info'));
-          const profileData = pDoc.exists() ? pDoc.data() : {};
-          
-          // Sync language preference from Firestore to App State
-          if (profileData.preferred_language && profileData.preferred_language !== language) {
-            setLanguage(profileData.preferred_language as Language);
-          }
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const fetchUserData = async () => {
+          try {
+            // Fetch user role from Firestore
+            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            
+            // Fetch profile details
+            const profileQuery = query(collection(db, 'profiles'), where('user_id', '==', firebaseUser.uid), limit(1));
+            const profileSnap = await getDocs(profileQuery);
+            const profileData = !profileSnap.empty ? profileSnap.docs[0].data() : {};
+            
+            // Sync language preference from Firestore to App State
+            if (profileData.preferred_language && profileData.preferred_language !== language) {
+              setLanguage(profileData.preferred_language as Language);
+            }
 
-          const isAdminEmail = firebaseUser.email === 'bcicomputerpoint@gmail.com' || firebaseUser.email === 'admin@onusandhan.com';
-          const role = isAdminEmail ? 'Admin' : (userDoc.exists() ? userDoc.data().role : 'Scholar');
-          
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: role,
-            full_name: profileData.full_name || firebaseUser.email?.split('@')[0],
-            photo_url: profileData.photo_url
-          });
-        } catch (error) {
-           console.error("Error fetching user role:", error);
-           setUser({ uid: firebaseUser.uid, email: firebaseUser.email, role: 'Scholar' });
-        }
+            const isAdminEmail = firebaseUser.email === 'bcicomputerpoint@gmail.com' || firebaseUser.email === 'admin@onusandhan.com';
+            const role = isAdminEmail ? 'Admin' : (userDoc.exists() ? userDoc.data().role : 'Scholar');
+            
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              role: role,
+              full_name: profileData.full_name || firebaseUser.email?.split('@')[0],
+              photo_url: profileData.photo_url
+            });
+          } catch (error: any) {
+             if (retryCount < maxRetries && (error.message?.includes('offline') || error.code === 'unavailable')) {
+                retryCount++;
+                console.warn(`Firestore unavailable, retrying (${retryCount}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, 2000 * retryCount));
+                return fetchUserData();
+             }
+             console.error("Error fetching user data:", error);
+             setUser({ uid: firebaseUser.uid, email: firebaseUser.email, role: 'Scholar' });
+          }
+        };
+        await fetchUserData();
       } else {
         setUser(null);
       }
@@ -141,15 +144,16 @@ export default function App() {
     });
 
     return unsubscribe;
-  }, []);
+  }, [language]);
 
   const refreshAuth = async () => {
     if (!auth.currentUser) return;
     const firebaseUser = auth.currentUser;
     try {
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      const pDoc = await getDoc(doc(db, `users/${firebaseUser.uid}/profile`, 'info'));
-      const profileData = pDoc.exists() ? pDoc.data() : {};
+      const profileQuery = query(collection(db, 'profiles'), where('user_id', '==', firebaseUser.uid), limit(1));
+      const profileSnap = await getDocs(profileQuery);
+      const profileData = !profileSnap.empty ? profileSnap.docs[0].data() : {};
       
       const isAdminEmail = firebaseUser.email === 'bcicomputerpoint@gmail.com' || firebaseUser.email === 'admin@onusandhan.com';
       const role = isAdminEmail ? 'Admin' : (userDoc.exists() ? userDoc.data().role : 'Scholar');
@@ -162,7 +166,7 @@ export default function App() {
         photo_url: profileData.photo_url
       });
     } catch (e) {
-      console.error(e);
+      console.error("Refresh auth failed:", e);
     }
   };
 

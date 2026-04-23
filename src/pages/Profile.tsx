@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../App';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, limit, addDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db, storage } from '../lib/firebase';
 import { Button, Input } from '../components/ui';
 import { User, BookOpen, CheckCircle } from 'lucide-react';
 
@@ -17,14 +17,17 @@ export default function Profile() {
     fetchProfile();
   }, [user]);
 
-  const fetchProfile = async () => {
+   const fetchProfile = async () => {
     if (!user?.uid) return;
     try {
        const userDoc = await getDoc(doc(db, 'users', user.uid));
-       const pDoc = await getDoc(doc(db, `users/${user.uid}/profile`, 'info'));
-       if (userDoc.exists() && pDoc.exists()) {
-          setProfile({ ...userDoc.data(), ...pDoc.data() });
-       } else if (userDoc.exists() && !pDoc.exists()) {
+       const q = query(collection(db, 'profiles'), where('user_id', '==', user.uid), limit(1));
+       const profileSnap = await getDocs(q);
+       
+       if (userDoc.exists() && !profileSnap.empty) {
+          const profileDoc = profileSnap.docs[0];
+          setProfile({ ...userDoc.data(), ...profileDoc.data(), _id: profileDoc.id });
+       } else if (userDoc.exists()) {
           setProfile({ ...userDoc.data(), full_name: user.email?.split('@')[0] });
        }
     } catch (err) {
@@ -37,17 +40,26 @@ export default function Profile() {
     if (!user?.uid) return;
     
     try {
-      const pRef = doc(db, `users/${user.uid}/profile`, 'info');
-      await setDoc(pRef, {
+      const profilePayload = {
+        user_id: user.uid,
         full_name: profile.full_name || '',
         institution: profile.institution || '',
         department: profile.department || '',
         research_area: profile.research_area || '',
+        session: profile.session || '',
+        university: profile.university || '',
+        program: profile.program || '',
         orcid: profile.orcid || '',
         bio: profile.bio || '',
         photo_url: profile.photo_url || '',
         preferred_language: profile.preferred_language || 'en'
-      }, { merge: true });
+      };
+
+      if (profile._id) {
+        await updateDoc(doc(db, 'profiles', profile._id), profilePayload);
+      } else {
+        await addDoc(collection(db, 'profiles'), profilePayload);
+      }
       
       setSaved(true);
       setIsEditing(false);
@@ -71,8 +83,11 @@ export default function Profile() {
       const newProfile = { ...profile, photo_url: downloadURL };
       setProfile(newProfile);
       
-      const pRef = doc(db, `users/${user.uid}/profile`, 'info');
-      await setDoc(pRef, { photo_url: downloadURL }, { merge: true });
+      if (profile._id) {
+        await updateDoc(doc(db, 'profiles', profile._id), { photo_url: downloadURL });
+      } else {
+        await addDoc(collection(db, 'profiles'), { user_id: user.uid, photo_url: downloadURL });
+      }
       
       if (refreshAuth) await refreshAuth();
     } catch (err: any) {
@@ -129,7 +144,19 @@ export default function Profile() {
                   <Input value={profile.role} disabled className="bg-slate-50" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Institution</label>
+                  <label className="block text-sm font-medium mb-1">University</label>
+                  <Input value={profile.university || ''} onChange={e => setProfile({...profile, university: e.target.value})} placeholder="e.g. Kalinga University" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Program / Degree</label>
+                  <Input value={profile.program || ''} onChange={e => setProfile({...profile, program: e.target.value})} placeholder="e.g. Ph.D. in Computer Science" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Session</label>
+                  <Input value={profile.session || ''} onChange={e => setProfile({...profile, session: e.target.value})} placeholder="e.g. 2024-2027" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Institution / College</label>
                   <Input value={profile.institution || ''} onChange={e => setProfile({...profile, institution: e.target.value})} />
                 </div>
                 <div>
@@ -186,6 +213,18 @@ export default function Profile() {
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-sm text-slate-500 block mb-1">University</span>
+                  <span className="font-medium text-slate-900">{profile.university || '—'}</span>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-sm text-slate-500 block mb-1">Program</span>
+                  <span className="font-medium text-slate-900">{profile.program || '—'}</span>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
+                  <span className="text-sm text-slate-500 block mb-1">Session</span>
+                  <span className="font-medium text-slate-900">{profile.session || '—'}</span>
+                </div>
                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <span className="text-sm text-slate-500 block mb-1">Department</span>
                   <span className="font-medium text-slate-900">{profile.department || '—'}</span>

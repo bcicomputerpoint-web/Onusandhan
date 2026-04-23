@@ -4,9 +4,9 @@ import { useAuth, useLanguage } from '../App';
 import { ProfileCard, SummaryCard, UploadCard, DataTable, LinkForm, LinkCard, PreviewModal, ConfirmModal, ProfileStrengthTracker } from '../components/dashboard/DashboardComponents';
 import AIAssistant from '../components/AIAssistant';
 import { FileText, CheckCircle, Clock, Link as LinkIcon, FileBadge, FileDigit, Tag, Play, ExternalLink, Activity, Search, Filter, Plus, FilePlus, ChevronDown, List, Trash2, File, Image as ImageIcon, FileSpreadsheet, FileArchive, FileType2, FileCode, BookOpen, Sparkles } from 'lucide-react';
-import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where } from 'firebase/firestore';
+import { collection, query, getDocs, getDoc, addDoc, deleteDoc, doc, where, limit, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { db, storage } from '../lib/firebase';
 import { Button } from '../components/ui';
 
 export default function Dashboard() {
@@ -28,7 +28,7 @@ export default function Dashboard() {
       if (!user?.uid) return;
       try {
          const q = query(
-           collection(db, `users/${user.uid}/drive_items`),
+           collection(db, 'drive_items'),
            where('user_id', '==', user.uid)
          );
          const querySnapshot = await getDocs(q);
@@ -43,8 +43,9 @@ export default function Dashboard() {
    const fetchProfile = async () => {
       if (!user?.uid) return;
       try {
-         const pDoc = await getDoc(doc(db, `users/${user.uid}/profile`, 'info'));
-         if (pDoc.exists()) setProfile(pDoc.data());
+         const q = query(collection(db, 'profiles'), where('user_id', '==', user.uid), limit(1));
+         const snapshot = await getDocs(q);
+         if (!snapshot.empty) setProfile(snapshot.docs[0].data());
       } catch (e) {
          console.error('Failed to fetch profile', e);
       }
@@ -57,8 +58,8 @@ export default function Dashboard() {
 
    const displayProfile = profile ? {
       photo: profile.photo_url || user?.photo_url || '', name: profile.full_name || user?.email?.split('@')[0] || 'Scholar', role: user?.role,
-      course: profile.institution || 'CS', university: profile.department || 'Tech University',
-      session: profile.research_area || '2024-2026', email: user?.email, mobile: '+1 234 567 890'
+      course: profile.program || profile.institution || 'CS', university: profile.university || profile.department || 'Tech University',
+      session: profile.session || profile.research_area || '2024-2026', email: user?.email, mobile: '+1 234 567 890'
    } : {
       photo: user?.photo_url || '', name: user?.email?.split('@')[0] || 'Scholar User', role: user?.role || 'Research Scholar',
       course: 'Ph.D. Computer Science', university: 'National Tech University',
@@ -174,13 +175,29 @@ export default function Dashboard() {
          if (!downloadUrl) throw new Error('Final file location could not be confirmed.');
 
          setUploadStatus('Saving to Database...');
-         const docData = { title: file.name, item_type: 'Document', category, file_path: downloadUrl, user_id: user.uid, created_at: Date.now(), visibility: 'Private' };
-         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), docData) as any;
+         const docData = { 
+            title: file.name, 
+            item_type: 'Document', 
+            category, 
+            file_path: downloadUrl, 
+            user_id: user.uid, 
+            created_at: serverTimestamp(), 
+            visibility: 'Private' 
+         };
+         const newDoc = await addDoc(collection(db, 'drive_items'), docData) as any;
          setItems((prev: any[]) => [{ id: newDoc.id, ...docData }, ...prev]);
          handleCancelPreview();
          alert("✓ File Uploaded");
       } catch (e: any) {
-         alert(`Error: ${e.message}`);
+         console.error("Firestore Upload Error Detail:", e);
+         const errorMsg = e.message || 'Unknown Error';
+         const errorCode = e.code || 'no-code';
+         
+         if (errorCode === 'permission-denied') {
+            alert(`DATA SAVE FAILURE: Your account (${user?.email}) does not have permission to save to the database. \n\nTechnical Code: ${errorCode}\nMessage: ${errorMsg}`);
+         } else {
+            alert(`UPLOAD ERROR: ${errorMsg} (Code: ${errorCode})`);
+         }
       } finally {
          setUploadingState(prev => ({ ...prev, [category]: false }));
          setUploadStatus('');
@@ -202,7 +219,7 @@ export default function Dashboard() {
            visibility: 'Private'
          };
          
-         const newDoc = await addDoc(collection(db, `users/${user.uid}/drive_items`), linkData);
+         const newDoc = await addDoc(collection(db, 'drive_items'), linkData);
          setItems([{ id: newDoc.id, ...linkData }, ...items]);
      } catch (e) {
         alert('Network error during link save');
@@ -224,7 +241,7 @@ export default function Dashboard() {
       
       setIsDeleting(true);
       try {
-        await deleteDoc(doc(db, `users/${user.uid}/drive_items`, id));
+        await deleteDoc(doc(db, 'drive_items', id));
         setItems(items.filter(item => item.id !== id));
         
         if (file_path && file_path.includes('firebasestorage.googleapis.com')) {
@@ -507,16 +524,6 @@ export default function Dashboard() {
                     </div>
                  )}
               </div>
-            </div>
-         </div>
-
-         {/* Table Section (All Files View) */}
-         <div className="pt-8 border-t border-slate-200">
-            <div className="mb-4">
-               <h2 className="text-[20px] font-bold text-slate-800 tracking-tight">All Files List</h2>
-            </div>
-            <div className="bg-transparent overflow-hidden">
-              <DataTable columns={fileColumns} data={fileItems} actions={fileActions} />
             </div>
          </div>
 
